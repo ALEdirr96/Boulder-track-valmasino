@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "Block": {
+      "title": "Block",
+      "description": "A boulder problem or block.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the block" },
+        "area": { "type": "string", "description": "Sector or area" },
+        "lat": { "type": "number", "description": "Latitude" },
+        "lng": { "type": "number", "description": "Longitude" },
+        "status": { "type": "string", "enum": ["new", "clean", "to_clean", "project"], "description": "Status of the block" },
+        "grade": { "type": "string", "description": "Difficulty grade" },
+        "height": { "type": "string", "description": "Estimated height" },
+        "style": { "type": "string", "description": "Climbing style" },
+        "exposure": { "type": "string", "description": "Sun exposure" },
+        "accessNotes": { "type": "string", "description": "Notes on how to reach the block" },
+        "landingNotes": { "type": "string", "description": "Notes on the landing safety" },
+        "riskLevel": { "type": "string", "description": "Perceived danger level" },
+        "photos": { "type": "array", "items": { "type": "string" }, "description": "URLs of photos" },
+        "linePhoto": { "type": "string", "description": "URL of the topo/line photo" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "createdBy": { "type": "string", "description": "User who added the block" },
+        "createdByEmail": { "type": "string", "description": "Email of the user who added the block" },
+        "createdByDisplayName": { "type": "string", "description": "Display name of the user who added the block" },
+        "projectOwner": { "type": "string", "description": "Original discoverer or project owner" },
+        "visited": { "type": "boolean", "description": "Whether the user has visited it" },
+        "favorite": { "type": "boolean", "description": "Whether it's a favorite" }
+      },
+      "required": ["name", "area", "lat", "lng", "status", "createdAt", "createdBy"]
+    },
+    "Log": {
+      "title": "Log",
+      "description": "An activity log entry",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "description": "Human-readable description" },
+        "type": { "type": "string", "description": "Log type category" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp" },
+        "createdBy": { "type": "string", "description": "User UID who triggered this" },
+        "createdByEmail": { "type": "string", "description": "User email who triggered this" },
+        "createdByDisplayName": { "type": "string", "description": "User name who triggered this" }
+      },
+      "required": ["action", "createdAt", "createdBy"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "App personalization settings",
+      "type": "object",
+      "properties": {
+        "accentColor": { "type": "string", "description": "Primary accent preset name" },
+        "logoText": { "type": "string", "description": "Custom logo text branding" },
+        "showLogoSymbol": { "type": "boolean", "description": "Whether to display the logo graphic icon" }
+      },
+      "required": ["accentColor", "logoText"]
+    }
+  },
+  "firestore": {
+    "/blocks/{blockId}": {
+      "schema": "Block",
+      "description": "Collection of boulder blocks"
+    },
+    "/logs/{logId}": {
+      "schema": "Log",
+      "description": "History logs of actions and events"
+    },
+    "/settings/{settingsId}": {
+      "schema": "Settings",
+      "description": "Configuration presets"
+    }
+  }
+}

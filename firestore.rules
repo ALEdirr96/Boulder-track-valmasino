@@ -1,0 +1,146 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: blocks
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required)
+    //   - area: string (required)
+    //   - lat: number (required)
+    //   - lng: number (required)
+    //   - status: string (required, ['new', 'clean', 'to_clean', 'project'])
+    //   - grade: string (optional)
+    //   - height: string (optional)
+    //   - style: string (optional)
+    //   - exposure: string (optional)
+    //   - accessNotes: string (optional)
+    //   - landingNotes: string (optional)
+    //   - riskLevel: string (optional)
+    //   - photos: list (optional)
+    //   - linePhoto: string (optional)
+    //   - createdAt: timestamp (required)
+    //   - createdBy: string (required, UID)
+    //   - createdByEmail: string (optional)
+    //   - visited: bool (optional)
+    //   - favorite: bool (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.createdBy;
+    }
+
+    function isValidBlock(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.area is string && data.area.size() > 0 && data.area.size() < 100 &&
+             data.lat is number && data.lng is number &&
+             data.status in ['new', 'clean', 'to_clean', 'project'] &&
+             (!('height' in data) || (data.height is string && data.height.size() < 20)) &&
+             (!('style' in data) || (data.style is string && data.style.size() < 50)) &&
+             (!('exposure' in data) || (data.exposure is string && data.exposure.size() < 50)) &&
+             (!('accessNotes' in data) || (data.accessNotes is string && data.accessNotes.size() < 1000)) &&
+             (!('landingNotes' in data) || (data.landingNotes is string && data.landingNotes.size() < 1000)) &&
+             (!('riskLevel' in data) || (data.riskLevel is string && data.riskLevel.size() < 50)) &&
+             (!('photos' in data) || (data.photos is list && data.photos.size() <= 5)) &&
+             (!('linePhoto' in data) || (data.linePhoto is string && data.linePhoto.size() < 2000)) &&
+             (!('lines' in data) || (data.lines is list && data.lines.size() <= 15)) &&
+             (!('projectOwner' in data) || (data.projectOwner is string && data.projectOwner.size() < 128)) &&
+             (!('createdByDisplayName' in data) || (data.createdByDisplayName is string && data.createdByDisplayName.size() < 128)) &&
+             (!('createdByEmail' in data) || (data.createdByEmail is string && data.createdByEmail.size() < 128)) &&
+             data.createdAt is timestamp &&
+             data.createdBy is string && data.createdBy.size() < 128 &&
+             (!('visited' in data) || data.visited is bool) &&
+             (!('favorite' in data) || data.favorite is bool);
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email != null &&
+             (request.auth.token.email.matches('(?i)^asdadmin@scalamasino[.]com$') || 
+              request.auth.token.email.matches('(?i)^asdadmin@valmasinoclimbing[.]com$') || 
+              request.auth.token.email.matches('(?i)^videoclipalessandrosangiorgio@gmail[.]com$'));
+    }
+
+    function isActive() {
+      return isSuperAdmin() || (
+        isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+      );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Allow self-registration as pending
+      allow create: if isOwner(userId) && 
+                      request.resource.data.role == 'user' && 
+                      request.resource.data.status == 'pending';
+      // Admins can create users directly
+      allow create: if isAdmin();
+      
+      // Update: Super admin can do anything. Admins can update status/role. Users can update their profile.
+      allow update: if isSuperAdmin() || 
+                    (isAdmin() && userId != request.auth.uid) ||
+                    (isOwner(userId) && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+                     resource.data.status == 'active');
+      allow delete: if isSuperAdmin() || (isAdmin() && userId != request.auth.uid);
+    }
+
+    match /blocks/{blockId} {
+      allow read: if isActive() || resource.data.status == 'clean';
+      
+      allow create: if isActive() && 
+                      isValidBlock(request.resource.data) && 
+                      request.resource.data.createdBy == request.auth.uid;
+      
+      allow update: if isActive() && 
+                      (
+                        ((isDocOwner() || isAdmin()) && 
+                         isValidBlock(request.resource.data) && 
+                         request.resource.data.createdBy == resource.data.createdBy) ||
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favorite', 'visited']))
+                      );
+                      
+      allow delete: if isActive() && (isDocOwner() || isAdmin());
+    }
+
+    match /settings/{settingsId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+  }
+}
