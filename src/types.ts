@@ -53,3 +53,15 @@ export interface UserProfile {
   photoURL?: string;
   createdAt: any;
 }
+
+export interface BlockReview {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  rating: number; // 0 to 5 sassi
+  comment: string;
+  hasClimbed: boolean; // Salito/Completato
+  createdAt: any;
+  updatedAt?: any;
+}

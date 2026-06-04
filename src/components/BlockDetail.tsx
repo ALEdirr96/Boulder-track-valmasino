@@ -5,10 +5,12 @@ import {
   ExternalLink, Ruler, Mountain, Sun, AlertTriangle,
   Clock, ShieldAlert, Shield, X, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { Block, BlockStatus } from '../types';
+import { Block, BlockStatus, BlockReview, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, orderBy } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface BlockDetailProps {
   block: Block;
@@ -21,6 +23,7 @@ interface BlockDetailProps {
   isAdmin?: boolean;
   isOwner?: boolean;
   isGuest?: boolean;
+  userProfile?: UserProfile | null;
 }
 
 const STATUS_COLORS: Record<BlockStatus, string> = {
@@ -48,9 +51,162 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
   isAdmin = false,
   isOwner = false,
   isGuest = false,
+  userProfile = null,
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [activePhotoIndex, setActivePhotoIndex] = React.useState<number | null>(null);
+  
+  // Custom reviews & ascents community state
+  const [reviews, setReviews] = React.useState<BlockReview[]>([]);
+  const [loadingReviews, setLoadingReviews] = React.useState(true);
+  const [userReview, setUserReview] = React.useState<BlockReview | null>(null);
+
+  // Form input state for active user
+  const [rating, setRating] = React.useState(0);
+  const [comment, setComment] = React.useState('');
+  const [hasClimbed, setHasClimbed] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
+
+  // Active user ID (authenticated or persistent generated guest ID)
+  const effectiveUserId = React.useMemo(() => {
+    if (userProfile?.uid) return userProfile.uid;
+    let storedUid = localStorage.getItem('boulder_tracker_guest_uid');
+    if (!storedUid) {
+      storedUid = 'guest_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+      localStorage.setItem('boulder_tracker_guest_uid', storedUid);
+    }
+    return storedUid;
+  }, [userProfile?.uid]);
+
+  // Saved nickname state for guest climbers
+  const [guestNickname, setGuestNickname] = React.useState(() => {
+    return localStorage.getItem('boulder_tracker_guest_nickname') || '';
+  });
+
+  React.useEffect(() => {
+    if (!block?.id) return;
+    const q = query(collection(db, 'blocks', block.id, 'reviews'), orderBy('createdAt', 'desc'));
+    setLoadingReviews(true);
+    const unsub = onSnapshot(q, (snapshot) => {
+      const fetchedReviews: BlockReview[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as BlockReview));
+      setReviews(fetchedReviews);
+      
+      const found = fetchedReviews.find(r => r.userId === effectiveUserId);
+      if (found) {
+        setUserReview(found);
+        setRating(found.rating);
+        setComment(found.comment);
+        setHasClimbed(found.hasClimbed);
+        // Restore guest nickname if present
+        if (!userProfile?.uid && found.userDisplayName && found.userDisplayName !== 'Scaler Anonimo') {
+          setGuestNickname(found.userDisplayName);
+        }
+      } else {
+        setUserReview(null);
+        setRating(0);
+        setComment('');
+        setHasClimbed(false);
+      }
+      setLoadingReviews(false);
+    }, (error) => {
+      console.error("Error loading reviews:", error);
+      setLoadingReviews(false);
+    });
+    return unsub;
+  }, [block.id, effectiveUserId, userProfile?.uid]);
+
+  const handleSaveReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      const reviewRef = doc(db, 'blocks', block.id, 'reviews', effectiveUserId);
+      const isGuestUser = !userProfile?.uid;
+      
+      const displayName = isGuestUser 
+        ? (guestNickname.trim() || 'Scaler Anonimo')
+        : (userProfile.displayName || userProfile.email.split('@')[0]);
+
+      if (isGuestUser) {
+        localStorage.setItem('boulder_tracker_guest_nickname', guestNickname);
+      }
+
+      await setDoc(reviewRef, {
+        userId: effectiveUserId,
+        userEmail: isGuestUser ? 'guest@valmasinoclimbing.com' : userProfile.email,
+        userDisplayName: displayName,
+        rating,
+        comment,
+        hasClimbed,
+        createdAt: userReview?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error("Error saving review:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteReview = async () => {
+    if (!window.confirm("Sei sicuro di voler eliminare il tuo feedback?")) return;
+    setIsSaving(true);
+    try {
+      const reviewRef = doc(db, 'blocks', block.id, 'reviews', effectiveUserId);
+      await deleteDoc(reviewRef);
+      setRating(0);
+      setComment('');
+      setHasClimbed(false);
+      setUserReview(null);
+    } catch (err) {
+      console.error("Error deleting review:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Helper inside component to render "Sassi" rock icons cleanly
+  const renderSassi = (count: number, onClick?: (rating: number) => void) => {
+    return (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((num) => {
+          const filled = num <= count;
+          return (
+            <button
+              type={onClick ? "button" : undefined}
+              key={num}
+              onClick={onClick ? () => onClick(num) : undefined}
+              disabled={!onClick}
+              className={cn(
+                "p-1 focus:outline-none transition-transform duration-100",
+                onClick ? "hover:scale-125 cursor-pointer active:scale-95" : "cursor-default"
+              )}
+            >
+              <Mountain 
+                className={cn(
+                  "w-5 h-5 transition-colors",
+                  filled 
+                    ? "text-stone-600 fill-stone-600 stroke-stone-700" 
+                    : "text-stone-200 stroke-stone-300"
+                )} 
+              />
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const completedAscentsCount = reviews.filter(r => r.hasClimbed).length;
+  const averageSassi = React.useMemo(() => {
+    const ratedReviews = reviews.filter(r => r.rating > 0);
+    if (ratedReviews.length === 0) return null;
+    const sum = ratedReviews.reduce((acc, r) => acc + r.rating, 0);
+    return Math.round((sum / ratedReviews.length) * 10) / 10;
+  }, [reviews]);
+
   const date = block.createdAt?.toDate ? block.createdAt.toDate() : new Date(block.createdAt);
 
   const canEdit = !isGuest && (isOwner || isAdmin);
@@ -154,6 +310,29 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Community Stats bar */}
+        {(completedAscentsCount > 0 || averageSassi !== null) && (
+          <div className="px-6 py-3 bg-stone-100/55 border-b border-stone-200/60 flex items-center justify-between text-[11px] font-bold text-stone-600">
+            {averageSassi !== null ? (
+              <div className="flex items-center gap-1.5 animate-fade-in">
+                <span className="text-[10px] font-black text-stone-400 uppercase tracking-wide">Media:</span>
+                <div className="flex items-center gap-0.5 select-none scale-90">
+                  {renderSassi(Math.round(averageSassi))}
+                </div>
+                <span className="text-stone-700 font-extrabold">({averageSassi}/5)</span>
+              </div>
+            ) : (
+              <div />
+            )}
+            {completedAscentsCount > 0 && (
+              <div className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-100/40 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tight shadow-sm select-none animate-fade-in">
+                <CheckCircle className="w-3.5 h-3.5 fill-emerald-100" />
+                <span>{completedAscentsCount} {completedAscentsCount === 1 ? 'Salita registrata' : 'Salite registrate'}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="p-6 space-y-8">
           {/* Action Buttons */}
@@ -289,6 +468,140 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
               </div>
             </section>
           )}
+
+          {/* COMMUNITY REVIEWS & ASCENTS SECTION */}
+          <section className="space-y-4 pt-6 border-t border-stone-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Feedback & Salite</h3>
+              <span className="text-[10px] font-black uppercase text-stone-400 bg-stone-100 px-2.5 py-1 rounded-full">Community ({reviews.length})</span>
+            </div>
+
+            {/* User review form / edit card for all climbers */}
+            <form onSubmit={handleSaveReview} className="bg-white rounded-3xl p-5 border border-stone-200/50 shadow-sm space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">
+                  {userReview ? "La tua valutazione" : "Aggiungi il tuo feedback"}
+                </span>
+                {userReview && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteReview}
+                    className="text-[9px] font-black text-red-500 uppercase hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" /> Elimina
+                  </button>
+                )}
+              </div>
+
+              {/* Nickname input for Guest users */}
+              {!userProfile?.uid && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">Tuo Nome / Soprannome (Opzionale)</label>
+                  <input
+                    type="text"
+                    placeholder="Es: Climber99 (Lascia vuoto per Anonimo)"
+                    value={guestNickname}
+                    onChange={(e) => setGuestNickname(e.target.value)}
+                    maxLength={30}
+                    className="w-full p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs placeholder-stone-400 font-bold outline-none focus:border-stone-400 transition-colors"
+                  />
+                </div>
+              )}
+
+              {/* 1. Climb marking */}
+              <div className="flex items-center justify-between bg-stone-50 p-3 rounded-2xl border border-stone-100">
+                <div className="flex flex-col pr-2">
+                  <span className="text-xs font-bold text-stone-800">Contrassegna come Salito</span>
+                  <span className="text-[9px] text-stone-400 leading-tight">Attiva questa opzione se hai completato la salita</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHasClimbed(!hasClimbed)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shrink-0 select-none",
+                    hasClimbed 
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/10" 
+                      : "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                  )}
+                >
+                  {hasClimbed ? "Salito! ✓" : "Non Salito"}
+                </button>
+              </div>
+
+              {/* 2. Rating in SASSI */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">Valutazione Blocco (SASSI)</label>
+                <div className="flex items-center gap-2">
+                  {renderSassi(rating, (r) => setRating(r))}
+                  <span className="text-xs font-bold text-stone-500">
+                    {rating === 0 ? "Seleziona i sassi" : `${rating} ${rating === 1 ? 'sasso' : 'sassi'}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. Text comment */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">Consigli o commenti</label>
+                <textarea
+                  placeholder="Scrivi qui i tuoi consigli, i passaggi chiave o commenti sul blocco..."
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  maxLength={300}
+                  className="w-full p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-800 placeholder-stone-400 outline-none focus:border-stone-400 transition-colors h-20 resize-none font-medium"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+              >
+                {isSaving ? "Salvataggio in corso..." : (userReview ? "Aggiorna Feedback" : "Invia Feedback")}
+              </button>
+            </form>
+
+            {/* List of other climbers' reviews */}
+            <div className="space-y-3">
+              {loadingReviews ? (
+                <p className="text-xs text-stone-400 italic text-center py-4">Caricamento commenti...</p>
+              ) : reviews.length === 0 ? (
+                <p className="text-xs text-stone-450 italic text-center py-8 bg-stone-100/30 rounded-3xl border border-dashed border-stone-200/50">Nessun feedback presente. Sii il primo ad aggiungerne uno!</p>
+              ) : (
+                reviews.map((rev) => {
+                  const revDate = rev.createdAt?.toDate ? rev.createdAt.toDate() : (rev.createdAt ? new Date(rev.createdAt) : new Date());
+                  return (
+                    <div key={rev.id || rev.userId} className="p-4 bg-white border border-stone-100 rounded-3xl shadow-sm space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                            {rev.userDisplayName}
+                            {rev.hasClimbed && (
+                              <span className="text-[8px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
+                                Salito
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[8px] text-stone-400 font-bold uppercase tracking-wider">
+                            {format(revDate, 'd MMM yyyy', { locale: it })}
+                          </span>
+                        </div>
+                        {rev.rating > 0 && (
+                          <div className="flex items-center gap-0.5 select-none scale-90 origin-right">
+                            {renderSassi(rev.rating)}
+                          </div>
+                        )}
+                      </div>
+                      {rev.comment && (
+                        <p className="text-xs text-stone-600 font-medium pl-2 leading-relaxed border-l-2 border-stone-200/60">
+                          {rev.comment}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </section>
 
           {/* Metadata */}
           <div className="pt-6 border-t border-stone-200 flex flex-col gap-2">

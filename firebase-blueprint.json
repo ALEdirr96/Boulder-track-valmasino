@@ -53,12 +53,31 @@
         "showLogoSymbol": { "type": "boolean", "description": "Whether to display the logo graphic icon" }
       },
       "required": ["accentColor", "logoText"]
+    },
+    "BlockReview": {
+      "title": "BlockReview",
+      "description": "User feedback, rating in sassi, and completion toggle",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "rating": { "type": "integer" },
+        "comment": { "type": "string" },
+        "hasClimbed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date" }
+      },
+      "required": ["userId", "userEmail", "rating", "comment", "hasClimbed"]
     }
   },
   "firestore": {
     "/blocks/{blockId}": {
       "schema": "Block",
       "description": "Collection of boulder blocks"
+    },
+    "/blocks/{blockId}/reviews/{reviewId}": {
+      "schema": "BlockReview",
+      "description": "Feedback, ratings in sassi, and climbing ascent checklist for each block"
     },
     "/logs/{logId}": {
       "schema": "Log",

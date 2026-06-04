@@ -900,6 +900,7 @@ export default function App() {
             isAdmin={profile?.role === 'admin'}
             isOwner={profile?.uid === selectedBlock.createdBy}
             isGuest={isGuest}
+            userProfile={profile}
           />
         ) : null;
 
