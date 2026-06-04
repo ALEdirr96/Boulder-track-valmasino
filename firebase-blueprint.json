@@ -65,6 +65,7 @@
         "rating": { "type": "integer" },
         "comment": { "type": "string" },
         "hasClimbed": { "type": "boolean" },
+        "climbedLines": { "type": "array", "items": { "type": "string" }, "description": "IDs of block lines successfully climbed" },
         "createdAt": { "type": "string", "format": "date" }
       },
       "required": ["userId", "userEmail", "rating", "comment", "hasClimbed"]

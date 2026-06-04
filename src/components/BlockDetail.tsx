@@ -3,7 +3,8 @@ import {
   MapPin, Star, Calendar, User, Info, Navigation, 
   Edit2, Trash2, CheckCircle, ArrowLeft, 
   ExternalLink, Ruler, Mountain, Sun, AlertTriangle,
-  Clock, ShieldAlert, Shield, X, ChevronLeft, ChevronRight
+  Clock, ShieldAlert, Shield, X, ChevronLeft, ChevronRight,
+  Check
 } from 'lucide-react';
 import { Block, BlockStatus, BlockReview, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -65,6 +66,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
   const [rating, setRating] = React.useState(0);
   const [comment, setComment] = React.useState('');
   const [hasClimbed, setHasClimbed] = React.useState(false);
+  const [climbedLines, setClimbedLines] = React.useState<string[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);
 
   // Active user ID (authenticated or persistent generated guest ID)
@@ -100,6 +102,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
         setRating(found.rating);
         setComment(found.comment);
         setHasClimbed(found.hasClimbed);
+        setClimbedLines(found.climbedLines || []);
         // Restore guest nickname if present
         if (!userProfile?.uid && found.userDisplayName && found.userDisplayName !== 'Scaler Anonimo') {
           setGuestNickname(found.userDisplayName);
@@ -109,6 +112,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
         setRating(0);
         setComment('');
         setHasClimbed(false);
+        setClimbedLines([]);
       }
       setLoadingReviews(false);
     }, (error) => {
@@ -117,6 +121,28 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
     });
     return unsub;
   }, [block.id, effectiveUserId, userProfile?.uid]);
+
+  const handleToggleClimbedLine = (lineId: string) => {
+    setClimbedLines(prev => {
+      const exists = prev.includes(lineId);
+      const updated = exists ? prev.filter(id => id !== lineId) : [...prev, lineId];
+      if (updated.length > 0) {
+        setHasClimbed(true);
+      }
+      return updated;
+    });
+  };
+
+  const handleToggleHasClimbed = () => {
+    const nextVal = !hasClimbed;
+    setHasClimbed(nextVal);
+    if (!nextVal) {
+      setClimbedLines([]);
+    } else if (block?.lines && block.lines.length === 1) {
+      const singleLineId = block.lines[0].id || block.lines[0].name || 'line_0';
+      setClimbedLines([singleLineId]);
+    }
+  };
 
   const handleSaveReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,6 +166,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
         rating,
         comment,
         hasClimbed,
+        climbedLines,
         createdAt: userReview?.createdAt || serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -159,6 +186,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
       setRating(0);
       setComment('');
       setHasClimbed(false);
+      setClimbedLines([]);
       setUserReview(null);
     } catch (err) {
       console.error("Error deleting review:", err);
@@ -516,7 +544,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setHasClimbed(!hasClimbed)}
+                  onClick={handleToggleHasClimbed}
                   className={cn(
                     "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shrink-0 select-none",
                     hasClimbed 
@@ -527,6 +555,51 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                   {hasClimbed ? "Salito! ✓" : "Non Salito"}
                 </button>
               </div>
+
+              {/* Specific Lines climbed checklist */}
+              {block.lines && block.lines.length > 0 && (
+                <div className="space-y-2 bg-stone-50/40 p-3.5 rounded-2xl border border-stone-100/80">
+                  <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">
+                    Quali linee hai salito? (Seleziona per segnarle)
+                  </label>
+                  <div className="space-y-1 py-1 max-h-48 overflow-y-auto no-scrollbar">
+                    {block.lines.map((line, idx) => {
+                      const lineId = line.id || line.name || `line_${idx}`;
+                      const isSelected = climbedLines.includes(lineId);
+                      return (
+                        <button
+                          type="button"
+                          key={lineId}
+                          onClick={() => handleToggleClimbedLine(lineId)}
+                          className={cn(
+                            "w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all duration-150 select-none active:scale-[0.99] cursor-pointer",
+                            isSelected 
+                              ? "bg-emerald-50/50 border-emerald-300 text-stone-800 font-bold" 
+                              : "bg-white border-stone-200/40 text-stone-600 font-medium hover:border-stone-300"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={cn(
+                              "w-5 h-5 rounded-md flex items-center justify-center border transition-all duration-150 shrink-0",
+                              isSelected 
+                                ? "bg-emerald-600 border-emerald-600 text-white" 
+                                : "border-stone-300 bg-white text-transparent"
+                            )}>
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </div>
+                            <span className="text-xs">
+                              {line.number ? `${line.number}. ` : ''}{line.name || `Linea ${idx + 1}`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase text-stone-450 bg-stone-100/80 px-2 py-0.5 rounded-md italic">
+                            {line.grade || '---'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* 2. Rating in SASSI */}
               <div className="space-y-1">
@@ -569,11 +642,16 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
               ) : (
                 reviews.map((rev) => {
                   const revDate = rev.createdAt?.toDate ? rev.createdAt.toDate() : (rev.createdAt ? new Date(rev.createdAt) : new Date());
+                  const revLines = rev.climbedLines || [];
+                  const climbedLineObjects = block.lines
+                    ? block.lines.filter(l => revLines.includes(l.id || l.name || ''))
+                    : [];
+
                   return (
                     <div key={rev.id || rev.userId} className="p-4 bg-white border border-stone-100 rounded-3xl shadow-sm space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex flex-col">
-                          <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5 flex-wrap">
                             {rev.userDisplayName}
                             {rev.hasClimbed && (
                               <span className="text-[8px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
@@ -591,6 +669,30 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                           </div>
                         )}
                       </div>
+
+                      {/* Display climbed lines if any were selected */}
+                      {climbedLineObjects.length > 0 && (
+                        <div className="flex flex-col gap-1 pt-1 bg-stone-50/45 p-2 rounded-2xl border border-stone-100/40">
+                          <span className="text-[8px] font-black uppercase tracking-wider text-stone-400">Linee salite:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {climbedLineObjects.map((line, idx) => (
+                              <span 
+                                key={line.id || idx} 
+                                className="text-[9px] font-bold text-stone-700 bg-white border border-stone-200/50 px-2 py-0.5 rounded-full inline-flex items-center gap-1 select-none animate-fade-in"
+                              >
+                                {line.number && (
+                                  <span className="w-3.5 h-3.5 flex items-center justify-center bg-stone-600 text-white font-black text-[8px] rounded-full shrink-0">
+                                    {line.number}
+                                  </span>
+                                )}
+                                <span>{line.name || `Linea ${idx + 1}`}</span>
+                                <span className="text-[8px] font-semibold text-stone-400 italic">({line.grade || '---'})</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {rev.comment && (
                         <p className="text-xs text-stone-600 font-medium pl-2 leading-relaxed border-l-2 border-stone-200/60">
                           {rev.comment}

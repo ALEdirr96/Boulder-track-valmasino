@@ -7,6 +7,7 @@ export interface Line {
   opener?: string;
   status: 'new' | 'clean' | 'project';
   description?: string;
+  number?: string | number;
 }
 
 export interface Block {
@@ -62,6 +63,7 @@ export interface BlockReview {
   rating: number; // 0 to 5 sassi
   comment: string;
   hasClimbed: boolean; // Salito/Completato
+  climbedLines?: string[]; // list of lines climbed
   createdAt: any;
   updatedAt?: any;
 }
