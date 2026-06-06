@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   User as UserIcon, Trash2, Mail, Shield, X, Loader2, Save, Undo2, LogIn,
   Check, Ban, UserX, UserCheck, Clock, KeyRound, AlertTriangle, Palette, 
-  FileText, Edit2, ShieldAlert, Mountain, HelpCircle, Upload, Link, RotateCcw
+  FileText, Edit2, ShieldAlert, Mountain, HelpCircle, Upload, Link, RotateCcw,
+  ExternalLink
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
 import { initializeApp } from 'firebase/app';
-import { getAuth, EmailAuthProvider, reauthenticateWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, EmailAuthProvider, reauthenticateWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { 
   collection, 
   query, 
@@ -108,150 +109,98 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
   
   const currentAuth = getAuth();
 
-  // Re-add user states
-  const [newMemberEmail, setNewMemberEmail] = useState('ciappinisimone@gmail.com');
-  const [newMemberPassword, setNewMemberPassword] = useState('simoasd11');
-  const [newMemberName, setNewMemberName] = useState('Simone Ciappini');
-  const [isSubmitNewMember, setIsSubmitNewMember] = useState(false);
-  const [newMemberError, setNewMemberError] = useState<string | null>(null);
-  const [newMemberSuccess, setNewMemberSuccess] = useState<string | null>(null);
-  const [restoringAll, setRestoringAll] = useState(false);
-  const [restoreAllLogsResult, setRestoreAllLogsResult] = useState<string | null>(null);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
+  const [resetEmailSuccess, setResetEmailSuccess] = useState<string | null>(null);
 
-  const handleRestoreAllDeletedUsers = async () => {
-    setRestoringAll(true);
-    setRestoreAllLogsResult(null);
-    let restoredCount = 0;
+  const handleSendResetEmail = async (targetEmail: string) => {
+    setSendingResetEmail(true);
+    setResetEmailSuccess(null);
     try {
-      const qLogs = query(collection(db, 'logs'));
-      const snapshot = await getDocs(qLogs);
-      
-      const loggedUsers = new Map<string, { email: string; displayName: string }>();
-      snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        if (data.createdBy && data.createdByEmail && data.createdBy !== 'Unknown' && data.createdBy !== 'system') {
-          loggedUsers.set(data.createdBy, {
-            email: data.createdByEmail,
-            displayName: data.createdByDisplayName || data.createdByEmail.split('@')[0]
-          });
-        }
-      });
-
-      const activeUids = new Set(users.map(u => u.uid));
-      let newlyRestoredList: string[] = [];
-
-      for (const [uid, info] of loggedUsers.entries()) {
-        if (!activeUids.has(uid) && info.email.toLowerCase() !== 'unknown') {
-          await setDoc(doc(db, 'users', uid), {
-            email: info.email.toLowerCase(),
-            displayName: info.displayName,
-            role: 'user',
-            status: 'active',
-            createdAt: new Date(),
-            photoURL: null
-          });
-          newlyRestoredList.push(`${info.displayName} (${info.email})`);
-          restoredCount++;
-        }
-      }
-
-      if (restoredCount > 0) {
-        setRestoreAllLogsResult(`Operazione completata! Ripristinati ${restoredCount} profili utente eliminati: ${newlyRestoredList.join(', ')}.`);
-        await logActivity(
-          `Ripristinati in blocco ${restoredCount} profili utente eliminati dai log`,
-          'user',
-          { 
-            uid: currentAuth.currentUser?.uid || 'Unknown', 
-            email: currentAuth.currentUser?.email || 'Unknown', 
-            displayName: currentAuth.currentUser?.displayName || 'Amministratore' 
-          }
-        );
-      } else {
-        setRestoreAllLogsResult("Tutti gli utenti presenti nei log storici sono già attivi!");
-      }
-    } catch (error: any) {
-      console.error(error);
-      setRestoreAllLogsResult(`Errore durante il ripristino: ${error.message || String(error)}`);
+      await sendPasswordResetEmail(currentAuth, targetEmail);
+      setResetEmailSuccess(`Link per il ripristino inviato con successo a: ${targetEmail}`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Errore nell'invio: ${err.message}`);
     } finally {
-      setRestoringAll(false);
+      setSendingResetEmail(false);
     }
   };
 
-  const handleAddOrRestoreUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMemberEmail.trim() || !newMemberPassword.trim()) {
-      setNewMemberError("Per favore compila tutti i campi.");
+  // State & Handlers for verification and cleanup of inactive user accounts (Firestore + guidance for Firebase Auth)
+  const [cleaningUpState, setCleaningUpState] = useState<{[key: string]: boolean}>({});
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+
+  const handleHardDeleteUser = async (uid: string, email: string, displayName: string) => {
+    if (!window.confirm(`Sei sicuro di voler CANCELLARE COMPLETAMENTE il record di questo membro da Firestore? \n\nMembro: ${displayName || 'Membro'}\nEmail: ${email}\n\nQuesta azione eliminerà DEFINITIVAMENTE la scheda soci su Firestore.`)) {
       return;
     }
-    setIsSubmitNewMember(true);
-    setNewMemberError(null);
-    setNewMemberSuccess(null);
-
-    const email = newMemberEmail.trim().toLowerCase();
-    const password = newMemberPassword.trim();
-    const displayName = newMemberName.trim() || email.split('@')[0];
-
-    const tempAppName = `temp-auth-${Date.now()}`;
-    let secondaryApp;
+    setCleaningUpState(prev => ({ ...prev, [uid]: true }));
     try {
-      secondaryApp = initializeApp(firebaseConfigExport, tempAppName);
-      const secondaryAuth = getAuth(secondaryApp);
-
-      let uid = '';
-      try {
-        const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-        uid = credential.user.uid;
-      } catch (authError: any) {
-        if (authError.code === 'auth/email-already-in-use') {
-          try {
-            const credential = await signInWithEmailAndPassword(secondaryAuth, email, password);
-            uid = credential.user.uid;
-          } catch (loginError: any) {
-            throw new Error(`L'email è registrata su Firebase Auth, ma la password non corrisponde. Dettagli: ${loginError.message}`);
-          }
-        } else {
-          throw authError;
-        }
-      }
-
-      await setDoc(doc(db, 'users', uid), {
-        email,
-        displayName,
-        role: 'user',
-        status: 'active',
-        createdAt: new Date(),
-        photoURL: null
-      });
-
+      await deleteDoc(doc(db, 'users', uid));
+      
       await logActivity(
-        `Aggiunto o ripristinato utente "${displayName}" (${email})`,
+        `Eliminato completamente record Firestore dell'utente disattivo "${displayName}" (${email})`,
         'user',
         { 
-          uid: currentAuth.currentUser?.uid || 'Unknown', 
-          email: currentAuth.currentUser?.email || 'Unknown', 
+          uid: currentAuth.currentUser?.uid || 'admin', 
+          email: currentAuth.currentUser?.email || '', 
           displayName: currentAuth.currentUser?.displayName || 'Amministratore' 
         }
       );
-
-      setNewMemberSuccess(`Utente "${displayName}" aggiunto/ripristinato con successo come ATTIVO!`);
-      setNewMemberEmail('');
-      setNewMemberPassword('');
-      setNewMemberName('');
-    } catch (err: any) {
-      console.error(err);
-      setNewMemberError(err.message || String(err));
+      setCleanupMessage(`Record di ${email} eliminato correttamente da Firestore.`);
+      setTimeout(() => setCleanupMessage(null), 8000);
+    } catch (error: any) {
+      console.error("Hard delete error:", error);
+      setCleanupMessage(`Errore durante l'eliminazione: ${error.message || String(error)}`);
     } finally {
-      if (secondaryApp) {
-        try {
-          await secondaryApp.delete();
-        } catch (e) {}
-      }
-      setIsSubmitNewMember(false);
+      setCleaningUpState(prev => ({ ...prev, [uid]: false }));
     }
   };
+
+  const handleBulkHardDeleteInactive = async () => {
+    const inactiveUsers = users.filter(u => u.status !== 'active');
+    if (inactiveUsers.length === 0) {
+      alert("Non ci sono utenti disattivi da cancellare.");
+      return;
+    }
+    if (!window.confirm(`Sei sicuro di voler CANCELLARE COMPLETAMENTE tutti i ${inactiveUsers.length} record Firestore di utenti disattivi (bloccati, eliminati soft o in attesa di approvazione)?\n\nQuesta operazione eliminerà solo le schede soci da Firestore. Dovrai comunque entrare nella Console Firebase Auth per rimuovere la loro registrazione d'accesso.`)) {
+      return;
+    }
+    
+    setCleaningUpState(prev => ({ ...prev, 'bulk-operation': true }));
+    setCleanupMessage(null);
+    let deletedCount = 0;
+    try {
+      for (const u of inactiveUsers) {
+        await deleteDoc(doc(db, 'users', u.uid));
+        deletedCount++;
+      }
+      
+      await logActivity(
+        `Eliminati in blocco ${deletedCount} record Firestore di utenti disattivi`,
+        'user',
+        { 
+          uid: currentAuth.currentUser?.uid || 'admin', 
+          email: currentAuth.currentUser?.email || '', 
+          displayName: currentAuth.currentUser?.displayName || 'Amministratore' 
+        }
+      );
+      setCleanupMessage(`Pulizia completata! Rimossi completamente ${deletedCount} record disattivi da Firestore.`);
+      setTimeout(() => setCleanupMessage(null), 8000);
+    } catch (error: any) {
+      console.error(error);
+      setCleanupMessage(`Errore nel bulk delete: ${error.message || String(error)}`);
+    } finally {
+      setCleaningUpState(prev => ({ ...prev, 'bulk-operation': false }));
+    }
+  };
+
   const isSuperAdmin = currentUserEmail?.trim().toLowerCase() === 'asdadmin@scalamasino.com' || 
                       currentUserEmail?.trim().toLowerCase() === 'asdadmin@valmasinoclimbing.com' || 
                       currentUserEmail?.trim().toLowerCase() === 'videoclipalessandrosangiorgio@gmail.com';
+  
+  const currentUserRecord = users.find(u => u.uid === currentAuth.currentUser?.uid);
+  const isAdmin = currentUserRecord?.role === 'admin' || isSuperAdmin;
   
   // Loaded standard users on initialization
   useEffect(() => {
@@ -415,7 +364,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
       // 2. Execute deletion logic
       if (confirmingAction.type === 'single' && confirmingAction.uid) {
         setDeletingUid(confirmingAction.uid);
-        await deleteDoc(doc(db, 'users', confirmingAction.uid));
+        await updateDoc(doc(db, 'users', confirmingAction.uid), { status: 'deleted' });
         
         await logActivity(
           `Eliminato definitivamente l'utente "${confirmingAction.name || confirmingAction.uid}"`,
@@ -429,7 +378,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
       } else if (confirmingAction.type === 'bulk') {
         setLoading(true);
         const nonAdmins = users.filter(u => u.role !== 'admin' && u.uid !== currentAuth.currentUser?.uid);
-        const deletePromises = nonAdmins.map(u => deleteDoc(doc(db, 'users', u.uid)));
+        const deletePromises = nonAdmins.map(u => updateDoc(doc(db, 'users', u.uid), { status: 'deleted' }));
         await Promise.all(deletePromises);
         
         await logActivity(
@@ -607,97 +556,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
               ))}
             </div>
 
-            {/* UTILITIES: ADD / RESTORE MEMBERS */}
-            <div className="px-4 pt-4">
-              <div className="bg-stone-50 border-2 border-dashed border-stone-200 rounded-[2rem] p-5 space-y-4 shadow-inner">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <UserIcon className="w-5 h-5 text-brand" />
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-800">Aggiungi o Ripristina Membri</span>
-                  </div>
-                  
-                  <button
-                    onClick={handleRestoreAllDeletedUsers}
-                    disabled={restoringAll}
-                    type="button"
-                    className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white text-[9px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {restoringAll ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <RotateCcw className="w-3 h-3" />
-                    )}
-                    Ripristina tutti da Log
-                  </button>
-                </div>
-
-                {restoreAllLogsResult && (
-                  <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[10px] font-medium">
-                    {restoreAllLogsResult}
-                  </div>
-                )}
-
-                <form onSubmit={handleAddOrRestoreUser} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Email</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-2.5 w-4 h-4 text-stone-300" />
-                      <input
-                        type="email"
-                        value={newMemberEmail}
-                        onChange={e => setNewMemberEmail(e.target.value)}
-                        placeholder="ciappinisimone@gmail.com"
-                        className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Password</label>
-                    <div className="relative">
-                      <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-stone-300" />
-                      <input
-                        type="text"
-                        value={newMemberPassword}
-                        onChange={e => setNewMemberPassword(e.target.value)}
-                        placeholder="simoasd11"
-                        className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Nome Visualizzato (Opz)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newMemberName}
-                        onChange={e => setNewMemberName(e.target.value)}
-                        placeholder="Simone Ciappini"
-                        className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSubmitNewMember}
-                        className="px-4 py-2 bg-brand text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-brand-hover transition-all flex items-center justify-center cursor-pointer disabled:opacity-50 shadow-md shadow-brand/10 shrink-0"
-                      >
-                        {isSubmitNewMember ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aggiungi'}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-                {newMemberError && (
-                  <div className="p-3 bg-red-50 text-red-800 rounded-xl border border-red-200 text-[10px] font-medium">
-                    {newMemberError}
-                  </div>
-                )}
-                {newMemberSuccess && (
-                  <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[10px] font-medium">
-                    {newMemberSuccess}
-                  </div>
-                )}
-              </div>
-            </div>
-
             <div className="p-4 space-y-4">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -805,6 +663,127 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                 ))
               )}
             </div>
+
+            {/* UTILITY: VERIFY AND CLEANUP INACTIVE ACCOUNTS */}
+            {isAdmin && (
+              <div className="px-4 pb-8">
+                <div className="bg-amber-50/30 border-2 border-dashed border-amber-200/60 rounded-[2rem] p-5 space-y-4 shadow-inner">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-5 h-5 text-amber-600" />
+                      <span className="text-[11px] font-black uppercase tracking-widest text-stone-800">Verifica & Sincronizzazione Auth</span>
+                    </div>
+                    {users.filter(u => u.status !== 'active').length > 0 && (
+                      <button
+                        onClick={handleBulkHardDeleteInactive}
+                        disabled={cleaningUpState['bulk-operation']}
+                        type="button"
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {cleaningUpState['bulk-operation'] ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                        Svuota tutti i disattivi da Firestore
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="text-[10px] text-stone-500 font-medium leading-relaxed">
+                    Per motivi di sicurezza di Google Firebase, la cancellazione definitiva di un account d'accesso da <strong>Firebase Authentication</strong> deve essere effettuata manualmente tramite la console web. Usa questa sezione per controllare le email, copiare quelle inattive e cancellare le loro schede soci da Firestore.
+                  </p>
+
+                  {cleanupMessage && (
+                    <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[10px] font-medium transition-all">
+                      {cleanupMessage}
+                    </div>
+                  )}
+
+                  {/* Account Status Stats */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-white rounded-2xl border border-stone-200 flex flex-col justify-center items-center shadow-sm">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-stone-400">Mail Attive</span>
+                      <span className="text-xl font-black text-emerald-600 mt-1">
+                        {users.filter(u => u.status === 'active').length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white rounded-2xl border border-stone-200 flex flex-col justify-center items-center shadow-sm">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-stone-400">Account Disattivi / Finti</span>
+                      <span className="text-xl font-black text-amber-600 mt-1">
+                        {users.filter(u => u.status !== 'active').length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* List of deactivated accounts to easily check & copy */}
+                  {users.filter(u => u.status !== 'active').length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block">Dettaglio Email Associate non Attive:</span>
+                      {users.filter(u => u.status !== 'active').map(u => (
+                        <div key={u.uid} className="p-3 bg-white border border-stone-100 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold">
+                          <div className="min-w-0">
+                            <p className="font-bold text-stone-800 truncate text-[11px]">{u.displayName}</p>
+                            <p className="text-[10px] text-stone-400 font-mono truncate">{u.email}</p>
+                            <span className={`inline-block mt-0.5 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                              u.status === 'pending' ? 'bg-amber-100 text-amber-800' : u.status === 'blocked' ? 'bg-red-100 text-red-800' : 'bg-stone-100 text-stone-800'
+                            }`}>
+                              {u.status === 'pending' ? 'In attesa' : u.status === 'blocked' ? 'Bloccato' : 'Eliminato soft'}
+                            </span>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(u.email);
+                                alert(`Email "${u.email}" copiata negli appunti!\nOra clicca sul pulsante nero "Apri Console Firebase Auth" e cercala per cancellarla anche lì.`);
+                              }}
+                              title="Copia email per cercarla"
+                              type="button"
+                              className="p-1.5 hover:bg-stone-100 text-stone-500 rounded-lg transition-colors border border-stone-200/50"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleHardDeleteUser(u.uid, u.email, u.displayName)}
+                              disabled={cleaningUpState[u.uid]}
+                              title="Cancella interamente da Firestore"
+                              type="button"
+                              className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors border border-red-100"
+                            >
+                              {cleaningUpState[u.uid] ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center py-2 text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50/50 rounded-xl">
+                      ✓ Nessun account disattivo o inattivo su Firestore!
+                    </p>
+                  )}
+
+                  {/* Direct External Link Button to Firebase Console Auth Users */}
+                  <div className="pt-2">
+                    <a
+                      href={`https://console.firebase.google.com/project/${firebaseConfigExport?.projectId || 'valmasinoclimbing'}/authentication/users`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="flex items-center justify-center gap-2 w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer shadow-md text-center"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Apri Console Firebase Auth
+                    </a>
+                    <span className="block text-[8px] text-center text-stone-400 mt-1 font-bold">
+                      ID Progetto: {firebaseConfigExport?.projectId || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
