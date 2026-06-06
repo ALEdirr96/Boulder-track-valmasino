@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
-import { getAuth, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
+import { getAuth, EmailAuthProvider, reauthenticateWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { 
   collection, 
   query, 
@@ -16,9 +17,10 @@ import {
   updateDoc,
   setDoc,
   orderBy,
-  limit
+  limit,
+  getDocs
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, firebaseConfigExport } from '../firebase';
 import { logActivity } from '../lib/logger';
 
 interface UserManagementProps {
@@ -105,6 +107,148 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   
   const currentAuth = getAuth();
+
+  // Re-add user states
+  const [newMemberEmail, setNewMemberEmail] = useState('ciappinisimone@gmail.com');
+  const [newMemberPassword, setNewMemberPassword] = useState('simoasd11');
+  const [newMemberName, setNewMemberName] = useState('Simone Ciappini');
+  const [isSubmitNewMember, setIsSubmitNewMember] = useState(false);
+  const [newMemberError, setNewMemberError] = useState<string | null>(null);
+  const [newMemberSuccess, setNewMemberSuccess] = useState<string | null>(null);
+  const [restoringAll, setRestoringAll] = useState(false);
+  const [restoreAllLogsResult, setRestoreAllLogsResult] = useState<string | null>(null);
+
+  const handleRestoreAllDeletedUsers = async () => {
+    setRestoringAll(true);
+    setRestoreAllLogsResult(null);
+    let restoredCount = 0;
+    try {
+      const qLogs = query(collection(db, 'logs'));
+      const snapshot = await getDocs(qLogs);
+      
+      const loggedUsers = new Map<string, { email: string; displayName: string }>();
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.createdBy && data.createdByEmail && data.createdBy !== 'Unknown' && data.createdBy !== 'system') {
+          loggedUsers.set(data.createdBy, {
+            email: data.createdByEmail,
+            displayName: data.createdByDisplayName || data.createdByEmail.split('@')[0]
+          });
+        }
+      });
+
+      const activeUids = new Set(users.map(u => u.uid));
+      let newlyRestoredList: string[] = [];
+
+      for (const [uid, info] of loggedUsers.entries()) {
+        if (!activeUids.has(uid) && info.email.toLowerCase() !== 'unknown') {
+          await setDoc(doc(db, 'users', uid), {
+            email: info.email.toLowerCase(),
+            displayName: info.displayName,
+            role: 'user',
+            status: 'active',
+            createdAt: new Date(),
+            photoURL: null
+          });
+          newlyRestoredList.push(`${info.displayName} (${info.email})`);
+          restoredCount++;
+        }
+      }
+
+      if (restoredCount > 0) {
+        setRestoreAllLogsResult(`Operazione completata! Ripristinati ${restoredCount} profili utente eliminati: ${newlyRestoredList.join(', ')}.`);
+        await logActivity(
+          `Ripristinati in blocco ${restoredCount} profili utente eliminati dai log`,
+          'user',
+          { 
+            uid: currentAuth.currentUser?.uid || 'Unknown', 
+            email: currentAuth.currentUser?.email || 'Unknown', 
+            displayName: currentAuth.currentUser?.displayName || 'Amministratore' 
+          }
+        );
+      } else {
+        setRestoreAllLogsResult("Tutti gli utenti presenti nei log storici sono già attivi!");
+      }
+    } catch (error: any) {
+      console.error(error);
+      setRestoreAllLogsResult(`Errore durante il ripristino: ${error.message || String(error)}`);
+    } finally {
+      setRestoringAll(false);
+    }
+  };
+
+  const handleAddOrRestoreUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMemberEmail.trim() || !newMemberPassword.trim()) {
+      setNewMemberError("Per favore compila tutti i campi.");
+      return;
+    }
+    setIsSubmitNewMember(true);
+    setNewMemberError(null);
+    setNewMemberSuccess(null);
+
+    const email = newMemberEmail.trim().toLowerCase();
+    const password = newMemberPassword.trim();
+    const displayName = newMemberName.trim() || email.split('@')[0];
+
+    const tempAppName = `temp-auth-${Date.now()}`;
+    let secondaryApp;
+    try {
+      secondaryApp = initializeApp(firebaseConfigExport, tempAppName);
+      const secondaryAuth = getAuth(secondaryApp);
+
+      let uid = '';
+      try {
+        const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+        uid = credential.user.uid;
+      } catch (authError: any) {
+        if (authError.code === 'auth/email-already-in-use') {
+          try {
+            const credential = await signInWithEmailAndPassword(secondaryAuth, email, password);
+            uid = credential.user.uid;
+          } catch (loginError: any) {
+            throw new Error(`L'email è registrata su Firebase Auth, ma la password non corrisponde. Dettagli: ${loginError.message}`);
+          }
+        } else {
+          throw authError;
+        }
+      }
+
+      await setDoc(doc(db, 'users', uid), {
+        email,
+        displayName,
+        role: 'user',
+        status: 'active',
+        createdAt: new Date(),
+        photoURL: null
+      });
+
+      await logActivity(
+        `Aggiunto o ripristinato utente "${displayName}" (${email})`,
+        'user',
+        { 
+          uid: currentAuth.currentUser?.uid || 'Unknown', 
+          email: currentAuth.currentUser?.email || 'Unknown', 
+          displayName: currentAuth.currentUser?.displayName || 'Amministratore' 
+        }
+      );
+
+      setNewMemberSuccess(`Utente "${displayName}" aggiunto/ripristinato con successo come ATTIVO!`);
+      setNewMemberEmail('');
+      setNewMemberPassword('');
+      setNewMemberName('');
+    } catch (err: any) {
+      console.error(err);
+      setNewMemberError(err.message || String(err));
+    } finally {
+      if (secondaryApp) {
+        try {
+          await secondaryApp.delete();
+        } catch (e) {}
+      }
+      setIsSubmitNewMember(false);
+    }
+  };
   const isSuperAdmin = currentUserEmail?.trim().toLowerCase() === 'asdadmin@scalamasino.com' || 
                       currentUserEmail?.trim().toLowerCase() === 'asdadmin@valmasinoclimbing.com' || 
                       currentUserEmail?.trim().toLowerCase() === 'videoclipalessandrosangiorgio@gmail.com';
@@ -461,6 +605,97 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                   {users.filter(u => u.status === f).length > 0 && ` (${users.filter(u => u.status === f).length})`}
                 </button>
               ))}
+            </div>
+
+            {/* UTILITIES: ADD / RESTORE MEMBERS */}
+            <div className="px-4 pt-4">
+              <div className="bg-stone-50 border-2 border-dashed border-stone-200 rounded-[2rem] p-5 space-y-4 shadow-inner">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <UserIcon className="w-5 h-5 text-brand" />
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-800">Aggiungi o Ripristina Membri</span>
+                  </div>
+                  
+                  <button
+                    onClick={handleRestoreAllDeletedUsers}
+                    disabled={restoringAll}
+                    type="button"
+                    className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white text-[9px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {restoringAll ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-3 h-3" />
+                    )}
+                    Ripristina tutti da Log
+                  </button>
+                </div>
+
+                {restoreAllLogsResult && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[10px] font-medium">
+                    {restoreAllLogsResult}
+                  </div>
+                )}
+
+                <form onSubmit={handleAddOrRestoreUser} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-2.5 w-4 h-4 text-stone-300" />
+                      <input
+                        type="email"
+                        value={newMemberEmail}
+                        onChange={e => setNewMemberEmail(e.target.value)}
+                        placeholder="ciappinisimone@gmail.com"
+                        className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Password</label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-stone-300" />
+                      <input
+                        type="text"
+                        value={newMemberPassword}
+                        onChange={e => setNewMemberPassword(e.target.value)}
+                        placeholder="simoasd11"
+                        className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Nome Visualizzato (Opz)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newMemberName}
+                        onChange={e => setNewMemberName(e.target.value)}
+                        placeholder="Simone Ciappini"
+                        className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-stone-300"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSubmitNewMember}
+                        className="px-4 py-2 bg-brand text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-brand-hover transition-all flex items-center justify-center cursor-pointer disabled:opacity-50 shadow-md shadow-brand/10 shrink-0"
+                      >
+                        {isSubmitNewMember ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aggiungi'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {newMemberError && (
+                  <div className="p-3 bg-red-50 text-red-800 rounded-xl border border-red-200 text-[10px] font-medium">
+                    {newMemberError}
+                  </div>
+                )}
+                {newMemberSuccess && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[10px] font-medium">
+                    {newMemberSuccess}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="p-4 space-y-4">
