@@ -540,7 +540,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
         
         {/* SUBVIEW 1: USERS MANAGEMENT */}
         {activeAdminTab === 'users' && (
-          <div className="flex flex-col h-full">
+          <div className="w-full">
             <div className="p-4 border-b border-stone-200 bg-white/80 backdrop-blur-md flex gap-2 overflow-x-auto sticky top-0 z-10">
               {(['all', 'pending', 'active', 'blocked'] as const).map(f => (
                 <button
@@ -569,12 +569,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
               ) : (
                 filteredUsers.map(user => (
                   <div key={user.uid} className="bg-white border-2 border-stone-200/50 rounded-[2rem] overflow-hidden shadow-sm hover:border-stone-300 transition-all">
-                    <div className="p-5 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
+                    <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div className="relative shrink-0">
                           <div className="w-14 h-14 bg-stone-50 rounded-2xl flex items-center justify-center overflow-hidden border border-stone-100 shadow-inner">
                             {user.photoURL ? (
-                              <img src={user.photoURL} className="w-full h-full object-cover" />
+                              <img src={user.photoURL} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               <UserIcon className="w-6 h-6 text-stone-300" />
                             )}
@@ -583,12 +583,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                           {user.status === 'pending' && <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 rounded-lg flex items-center justify-center border-2 border-white shadow-sm"><Clock className="w-3 h-3 text-white" /></div>}
                           {user.status === 'blocked' && <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-red-500 rounded-lg flex items-center justify-center border-2 border-white shadow-sm"><UserX className="w-3 h-3 text-white" /></div>}
                         </div>
-                        <div>
-                          <div className="font-black text-stone-900 flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-black text-stone-900 flex items-center gap-2 truncate">
                             {user.displayName}
                             {user.role === 'admin' && <Shield className="w-3 h-3 text-brand shrink-0" />}
                           </div>
-                          <div className="text-[10px] font-bold text-stone-400 uppercase tracking-tight">{user.email}</div>
+                          <div className="text-[10px] font-bold text-stone-400 uppercase tracking-tight truncate">{user.email}</div>
                           <div className={`text-[8px] font-black uppercase tracking-widest mt-1 ${
                             user.status === 'active' ? 'text-emerald-500' : user.status === 'pending' ? 'text-amber-500' : 'text-red-500'
                           }`}>
@@ -597,7 +597,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                         {user.status === 'pending' && (
                           <button
                             onClick={() => handleUpdateStatus(user.uid, 'active')}
@@ -721,8 +721,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                       <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block">Dettaglio Email Associate non Attive:</span>
                       {users.filter(u => u.status !== 'active').map(u => (
-                        <div key={u.uid} className="p-3 bg-white border border-stone-100 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold">
-                          <div className="min-w-0">
+                        <div key={u.uid} className="p-3 bg-white border border-stone-100 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold min-w-0">
+                          <div className="flex-1 min-w-0">
                             <p className="font-bold text-stone-800 truncate text-[11px]">{u.displayName}</p>
                             <p className="text-[10px] text-stone-400 font-mono truncate">{u.email}</p>
                             <span className={`inline-block mt-0.5 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
@@ -1059,14 +1059,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
           </div>
         )}
 
-      </div>
+        {/* Inline Footer nested in the scroll container to optimize mobile physical screen bounds */}
+        <div className="p-5 mt-auto bg-stone-900 text-white flex flex-col gap-1 items-center text-center">
+          <ShieldAlert className="w-4 h-4 text-brand mb-1" />
+          <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed italic">
+            Partner ASD Val Masino Climbing Member Cloud
+          </p>
+          <span className="text-[8px] text-stone-500 uppercase font-black">Supervisore: {currentAuth.currentUser?.email}</span>
+        </div>
 
-      <div className="p-5 bg-stone-900 text-white flex flex-col gap-1 items-center text-center">
-        <ShieldAlert className="w-4 h-4 text-brand mb-1" />
-        <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed italic">
-          Partner ASD Val Masino Climbing Member Cloud
-        </p>
-        <span className="text-[8px] text-stone-500 uppercase font-black">Supervisore: {currentAuth.currentUser?.email}</span>
       </div>
 
       {/* Security Confirmation Modal */}

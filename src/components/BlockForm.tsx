@@ -27,6 +27,20 @@ const RISK_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'Danger', label: 'Pericoloso', color: 'bg-red-500' },
 ];
 
+const parseCoordinatesString = (text: string): { lat: number; lng: number } | null => {
+  const cleanText = text.trim();
+  const regex = /(-?\d+(?:\.\d+)?)\s*[\s,;/|]\s*(-?\d+(?:\.\d+)?)/;
+  const match = cleanText.match(regex);
+  if (match) {
+    const lat = parseFloat(match[1]);
+    const lng = parseFloat(match[2]);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return { lat, lng };
+    }
+  }
+  return null;
+};
+
 export const BlockForm: React.FC<BlockFormProps> = ({
   initialData,
   onSubmit,
@@ -82,6 +96,15 @@ export const BlockForm: React.FC<BlockFormProps> = ({
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
     );
+  };
+
+  const handlePasteCoordinates = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    const parsed = parseCoordinatesString(text);
+    if (parsed) {
+      e.preventDefault();
+      setFormData(prev => ({ ...prev, lat: parsed.lat, lng: parsed.lng }));
+    }
   };
 
   useEffect(() => {
@@ -277,12 +300,49 @@ export const BlockForm: React.FC<BlockFormProps> = ({
           </div>
           
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-white border border-stone-200 rounded-xl text-sm font-mono text-stone-600">
-              {formData.lat?.toFixed(6) || '0.000000'}
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-stone-400 block">Latitudine</span>
+              <input
+                type="number"
+                step="any"
+                value={formData.lat || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, lat: parseFloat(e.target.value) || 0 }))}
+                onPaste={handlePasteCoordinates}
+                placeholder="Latitudine (es. 46.241512)"
+                className="w-full p-3 bg-white border border-stone-200 rounded-xl text-sm font-mono text-stone-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+              />
             </div>
-            <div className="p-3 bg-white border border-stone-200 rounded-xl text-sm font-mono text-stone-600">
-              {formData.lng?.toFixed(6) || '0.000000'}
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-stone-400 block">Longitudine</span>
+              <input
+                type="number"
+                step="any"
+                value={formData.lng || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, lng: parseFloat(e.target.value) || 0 }))}
+                onPaste={handlePasteCoordinates}
+                placeholder="Longitudine (es. 9.612123)"
+                className="w-full p-3 bg-white border border-stone-200 rounded-xl text-sm font-mono text-stone-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+              />
             </div>
+          </div>
+
+          <div className="pt-2 border-t border-stone-200/50 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Incolla Coordinate rapide</span>
+              <span className="text-[8px] font-bold text-stone-400 uppercase">Es: 46.2415, 9.6121</span>
+            </div>
+            <input
+              type="text"
+              placeholder="Incolla coppia di coordinate o link di Maps..."
+              onChange={(e) => {
+                const val = e.target.value;
+                const parsed = parseCoordinatesString(val);
+                if (parsed) {
+                  setFormData(prev => ({ ...prev, lat: parsed.lat, lng: parsed.lng }));
+                }
+              }}
+              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-none placeholder:text-stone-300 shadow-sm"
+            />
           </div>
           
           {locationError && (
