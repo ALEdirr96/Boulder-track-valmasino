@@ -27,6 +27,10 @@ interface Equipment {
   status: 'available' | 'borrowed' | 'maintenance';
   serialNumber?: string;
   createdAt: any;
+  borrowedByEmail?: string;
+  borrowedByUserId?: string;
+  borrowedByName?: string;
+  borrowedAt?: any;
 }
 
 interface EquipmentLog {
@@ -116,6 +120,14 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
   const [quickBorrowError, setQuickBorrowError] = useState('');
   const [isSubmittingQuickBorrow, setIsSubmittingQuickBorrow] = useState(false);
 
+  // User Return Modal states
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnItem, setReturnItem] = useState<Equipment | null>(null);
+  const [returnCondition, setReturnCondition] = useState<'available' | 'maintenance'>('available');
+  const [returnNotes, setReturnNotes] = useState('');
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+  const [returnError, setReturnError] = useState('');
+
   // Booking Modal States
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
@@ -139,7 +151,7 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
 
   // Filter and Search states
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'borrowed' | 'maintenance'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'borrowed' | 'maintenance' | 'my-borrowed'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
   // History search/filters
@@ -181,6 +193,10 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
           status: data.status || 'available',
           serialNumber: data.serialNumber || '',
           createdAt: data.createdAt,
+          borrowedByEmail: data.borrowedByEmail || '',
+          borrowedByUserId: data.borrowedByUserId || '',
+          borrowedByName: data.borrowedByName || '',
+          borrowedAt: data.borrowedAt,
         });
       });
       setEquipmentList(items);
@@ -302,8 +318,14 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
       for (const item of chosenItems) {
         const eqDocRef = doc(db, 'equipment', item.id);
         
-        // Update status to borrowed
-        await updateDoc(eqDocRef, { status: 'borrowed' });
+        // Update status to borrowed with borrower info
+        await updateDoc(eqDocRef, { 
+          status: 'borrowed',
+          borrowedByEmail: profile?.email || '',
+          borrowedByUserId: profile?.uid || '',
+          borrowedByName: borrowerName,
+          borrowedAt: serverTimestamp()
+        });
 
         // Create Equipment Log
         await addDoc(collection(db, 'equipment_logs'), {
@@ -313,7 +335,7 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
           action: 'borrow',
           dateTime: serverTimestamp(),
           adminId: currentAdmin?.uid || 'user',
-          notes: quickBorrowNotes.trim() || 'Prelevato tramite pulsante rapido Magazzino.',
+          notes: quickBorrowNotes.trim() || 'Prelevato tramite prelievo giornaliero Magazzino.',
         });
 
         // System activity log
@@ -351,17 +373,94 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
   };
 
+  const isBorrowedByMe = (item: Equipment) => {
+    if (item.status !== 'borrowed') return false;
+    const isMyId = !!(item.borrowedByUserId && item.borrowedByUserId === profile?.uid);
+    const isMyEmail = !!(item.borrowedByEmail && item.borrowedByEmail === profile?.email);
+    const isMyName = !!(item.borrowedByName && item.borrowedByName === profile?.displayName);
+    return isMyId || isMyEmail || isMyName;
+  };
+
+  const handleReturnSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReturnError('');
+    if (!returnItem) return;
+
+    setIsSubmittingReturn(true);
+    try {
+      const eqDocRef = doc(db, 'equipment', returnItem.id);
+
+      // Status at return: 'available' or 'maintenance'
+      const finalStatus = returnCondition;
+
+      // 1. Update equipment document
+      await updateDoc(eqDocRef, {
+        status: finalStatus,
+        borrowedByEmail: null,
+        borrowedByUserId: null,
+        borrowedByName: null,
+        borrowedAt: null
+      });
+
+      // 2. Create Equipment Log
+      const personNameLabel = profile?.displayName || profile?.email || 'Socio';
+      await addDoc(collection(db, 'equipment_logs'), {
+        equipmentId: returnItem.id,
+        equipmentName: returnItem.name,
+        personName: personNameLabel,
+        action: 'return',
+        dateTime: serverTimestamp(),
+        adminId: 'user-return',
+        notes: returnNotes.trim() || `Attrezzatura riconsegnata dal socio. Stato: ${finalStatus === 'available' ? 'Disponibile' : 'In manutenzione'}.`
+      });
+
+      // 3. Log activity
+      await logActivity(
+        `Restituito: attrezzo "${returnItem.name}" riconsegnato da ${personNameLabel} (Stato: ${finalStatus === 'available' ? 'Disponibile' : 'In Manutenzione'})`,
+        'equipment',
+        profile
+      );
+
+      setShowReturnModal(false);
+      setReturnItem(null);
+      setReturnNotes('');
+      setReturnCondition('available');
+      alert('Riconsegna attrezzatura registrata con successo!');
+    } catch (err: any) {
+      setReturnError(err.message || 'Errore durante la riconsegna.');
+    } finally {
+      setIsSubmittingReturn(false);
+    }
+  };
+
   // Filtered Equipment List
   const filteredEquipment = useMemo(() => {
     return equipmentList.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             (item.serialNumber && item.serialNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
                             item.category.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+      
+      let matchesStatus = false;
+      if (statusFilter === 'all') {
+        matchesStatus = true;
+      } else if (statusFilter === 'my-borrowed') {
+        matchesStatus = item.status === 'borrowed' && (
+          (item.borrowedByUserId && item.borrowedByUserId === profile?.uid) ||
+          (item.borrowedByEmail && item.borrowedByEmail === profile?.email) ||
+          (item.borrowedByName && item.borrowedByName === profile?.displayName)
+        );
+      } else {
+        matchesStatus = item.status === statusFilter;
+      }
+
       const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
       return matchesSearch && matchesStatus && matchesCategory;
     });
-  }, [equipmentList, searchQuery, statusFilter, categoryFilter]);
+  }, [equipmentList, searchQuery, statusFilter, categoryFilter, profile]);
+
+  const myBorrowedItems = useMemo(() => {
+    return equipmentList.filter(item => isBorrowedByMe(item));
+  }, [equipmentList, profile]);
 
   // Unique categories list for filters
   const uniqueCategories = useMemo(() => {
@@ -464,8 +563,20 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
       const newStatus = logActionType === 'borrow' ? 'borrowed' : 
                         logActionType === 'return' ? 'available' : 'maintenance';
 
-      // 1. Update status
-      await updateDoc(eqDocRef, { status: newStatus });
+      // 1. Update status and borrower details
+      const updatePayload: any = { status: newStatus };
+      if (logActionType === 'borrow') {
+        updatePayload.borrowedByName = personName.trim();
+        updatePayload.borrowedByEmail = (personName.trim() === profile?.displayName || personName.trim() === profile?.email) ? (profile?.email || '') : '';
+        updatePayload.borrowedByUserId = (personName.trim() === profile?.displayName || personName.trim() === profile?.email) ? (profile?.uid || '') : '';
+        updatePayload.borrowedAt = serverTimestamp();
+      } else {
+        updatePayload.borrowedByName = null;
+        updatePayload.borrowedByEmail = null;
+        updatePayload.borrowedByUserId = null;
+        updatePayload.borrowedAt = null;
+      }
+      await updateDoc(eqDocRef, updatePayload);
 
       // 2. Create Equipment Log
       await addDoc(collection(db, 'equipment_logs'), {
@@ -733,6 +844,60 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
         {tab === 'list' && (
           <div className="space-y-4 animate-none">
             
+            {/* Quick Action: Return Equipment (Rientro Attrezzatura) */}
+            <div className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-3xl shadow-sm text-stone-800 space-y-3">
+              <div className="flex justify-between items-start">
+                <div className="space-y-0.5">
+                  <span className="text-[8px] font-black tracking-widest text-emerald-600 uppercase">Magazzino ASD</span>
+                  <h3 className="font-extrabold text-sm uppercase leading-none text-stone-905">Rientro Attrezzatura</h3>
+                  <p className="text-[10px] text-stone-500 font-semibold leading-tight">Gestisci la riconsegna e lo stato degli attrezzi presi in prestito.</p>
+                </div>
+                <div className="p-2 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              {myBorrowedItems.length > 0 ? (
+                <div className="space-y-2 pt-1.5 border-t border-emerald-100">
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider block">I tuoi prestiti attivi ({myBorrowedItems.length}):</span>
+                  <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                    {myBorrowedItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between bg-white p-2 rounded-xl border border-emerald-100/80 shadow-xs">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[11px] font-extrabold text-stone-850 truncate leading-none">{item.name}</p>
+                          <p className="text-[8px] font-bold text-stone-400 uppercase tracking-tight mt-0.5">{item.category}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setReturnItem(item);
+                            setReturnCondition('available');
+                            setReturnNotes('');
+                            setReturnError('');
+                            setShowReturnModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[9px] uppercase tracking-wider rounded-lg transition-all shadow-xs shrink-0 flex items-center gap-1 cursor-pointer border-0"
+                        >
+                          Fai Rientrare
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-emerald-100/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <p className="text-[10px] text-stone-500 font-semibold leading-tight">Al momento non hai attrezzatura in carico.</p>
+                  <button
+                    onClick={() => {
+                      setStatusFilter('my-borrowed');
+                    }}
+                    className="px-3 py-1.5 bg-stone-900 hover:bg-stone-850 active:scale-95 text-white font-black text-[9px] uppercase tracking-wider rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer border-0"
+                  >
+                    Mostra Tutti i Prestiti
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Search and Quick Filters */}
             <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm space-y-3">
               <div className="relative">
@@ -748,7 +913,7 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
 
               <div className="flex gap-2 leading-none overflow-x-auto pb-1">
                 <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest self-center shrink-0 mr-1">Stato:</span>
-                {(['all', 'available', 'borrowed', 'maintenance'] as const).map((st) => (
+                {(['all', 'available', 'borrowed', 'my-borrowed', 'maintenance'] as const).map((st) => (
                   <button
                     key={st}
                     onClick={() => setStatusFilter(st)}
@@ -758,7 +923,7 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
                         : 'bg-white border-stone-200 text-stone-500 hover:border-stone-300'
                     }`}
                   >
-                    {st === 'all' ? 'Tutti' : st === 'available' ? 'Liberi' : st === 'borrowed' ? 'In Prestito' : 'Manutenz.'}
+                    {st === 'all' ? 'Tutti' : st === 'available' ? 'Liberi' : st === 'borrowed' ? 'In Prestito' : st === 'my-borrowed' ? 'Prese da me' : 'Manutenz.'}
                   </button>
                 ))}
               </div>
@@ -909,6 +1074,22 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
                     {/* Action buttons list */}
                     <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 pt-2 border-t border-stone-100/60">
                       
+                      {/* Return button if borrowed by me OR if admin and status is borrowed */}
+                      {(isBorrowedByMe(item) || (profile?.role === 'admin' && item.status === 'borrowed')) && (
+                        <button
+                          onClick={() => {
+                            setReturnItem(item);
+                            setReturnCondition('available');
+                            setReturnNotes('');
+                            setReturnError('');
+                            setShowReturnModal(true);
+                          }}
+                          className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1 cursor-pointer border-0"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Fai Rientrare
+                        </button>
+                      )}
+
                       {/* Booking Action Button for everyone */}
                       {item.status !== 'maintenance' && (
                         <button
@@ -930,16 +1111,6 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
                               className="px-2.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider rounded-xl transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
                             >
                               <ArrowRightLeft className="w-3 h-3" /> Presta
-                            </button>
-                          )}
-
-                          {/* Return Quick button */}
-                          {item.status === 'borrowed' && (
-                            <button
-                              onClick={() => openMovementModal(item, 'return')}
-                              className="px-2.5 py-2 bg-red-500 hover:bg-red-600 text-white font-black text-[9px] uppercase tracking-wider rounded-xl transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
-                            >
-                              <Check className="w-3 h-3" /> Ricevi
                             </button>
                           )}
 
@@ -1506,9 +1677,9 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
                   </div>
                   <div>
                     <h4 className="font-black text-stone-905 uppercase tracking-wider text-sm">
-                      Prelievo Rapino Magazzino
+                      Prelievo Giornaliero Magazzino
                     </h4>
-                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Chiudi il prestito dal magazzino</p>
+                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Scegli le attrezzature prelevate oggi</p>
                   </div>
                 </div>
 
@@ -1593,6 +1764,128 @@ export const EquipmentManagement: React.FC<EquipmentManagementProps> = ({ profil
                       className="flex-1 py-3 bg-stone-900 hover:bg-stone-850 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all disabled:bg-stone-400 cursor-pointer font-extrabold"
                     >
                       {isSubmittingQuickBorrow ? 'Caricamento...' : 'Invia Prelievo'}
+                    </button>
+                  </div>
+
+                </form>
+
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL 5: CUSTOM RETURN FORM */}
+      <AnimatePresence>
+        {showReturnModal && returnItem && (
+          <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-[2rem] w-full max-w-md p-6 border-2 border-stone-300 shadow-2xl relative overflow-hidden text-stone-800"
+            >
+              
+              <button 
+                type="button"
+                onClick={() => { setShowReturnModal(false); setReturnItem(null); }}
+                className="absolute top-4 right-4 p-2 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="space-y-4">
+                
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-500 border border-emerald-100">
+                    <History className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-stone-900 uppercase tracking-wider text-sm">
+                      Fai Rientrare Attrezzatura
+                    </h4>
+                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Registra il rientro a magazzino</p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-150">
+                  <div className="text-xs font-black text-stone-800 uppercase tracking-wide">{returnItem.name}</div>
+                  <div className="text-[9px] font-bold text-stone-400 uppercase tracking-tight mt-0.5">{returnItem.category}</div>
+                  {returnItem.serialNumber && (
+                    <div className="text-[9px] font-mono text-stone-500 mt-0.5">S/N: {returnItem.serialNumber}</div>
+                  )}
+                </div>
+
+                <form onSubmit={handleReturnSubmit} className="space-y-4 pt-2 border-t border-stone-100">
+                  
+                  {/* Select Condition / Status on Return */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Stato dell'attrezzatura al rientro *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReturnCondition('available')}
+                        className={`p-3 rounded-2xl border text-xs font-extrabold uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                          returnCondition === 'available'
+                            ? 'bg-emerald-500 border-emerald-500 text-white font-extrabold'
+                            : 'bg-stone-50 border-stone-200 text-stone-500 hover:border-stone-300'
+                        }`}
+                      >
+                        <Check className="w-4 h-4 mx-auto" />
+                        <span>Ottimo Stato</span>
+                        <span className="text-[8px] font-normal tracking-wide normal-case mt-0.5">Pronta per altri prestiti</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setReturnCondition('maintenance')}
+                        className={`p-3 rounded-2xl border text-xs font-extrabold uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                          returnCondition === 'maintenance'
+                            ? 'bg-amber-500 border-amber-500 text-white font-extrabold'
+                            : 'bg-stone-50 border-stone-200 text-stone-500 hover:border-stone-300'
+                        }`}
+                      >
+                        <Wrench className="w-4 h-4 mx-auto" />
+                        <span>Manutenzione</span>
+                        <span className="text-[8px] font-normal tracking-wide normal-case mt-0.5">Segnala problemi o guasti</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Notes / Condition details */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Note e Condizioni al rientro (Opzionale)</label>
+                    <textarea
+                      placeholder="Es: Corda pulita, sacca intonsa, segnalo usura capocorda..."
+                      value={returnNotes}
+                      onChange={(e) => setReturnNotes(e.target.value)}
+                      rows={3}
+                      className="w-full p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs font-semibold focus:ring-2 focus:ring-stone-950 outline-none resize-none text-stone-850"
+                    />
+                  </div>
+
+                  {returnError && (
+                    <div className="p-3 bg-red-50 text-red-700 text-xs font-semibold rounded-2xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      {returnError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowReturnModal(false); setReturnItem(null); }}
+                      className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors cursor-pointer"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingReturn}
+                      className="flex-1 py-3 bg-stone-900 hover:bg-stone-850 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all disabled:bg-stone-400 cursor-pointer font-extrabold"
+                    >
+                      {isSubmittingReturn ? 'Caricamento...' : 'Accetta Rientro'}
                     </button>
                   </div>
 

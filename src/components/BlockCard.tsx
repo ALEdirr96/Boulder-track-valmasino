@@ -37,7 +37,7 @@ export const BlockCard: React.FC<BlockCardProps> = ({ block, onClick }) => {
           <img
             src={block.photos[0]}
             alt={block.name}
-            className="w-full h-full object-contain p-1"
+            className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
         ) : (

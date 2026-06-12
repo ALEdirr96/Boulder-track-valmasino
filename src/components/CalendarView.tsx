@@ -532,9 +532,36 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ profile }) => {
           </div>
         </button>
       );
-    }
+    }    return cells;
+  };
 
-    return cells;
+  const todayStr = formatDateString(new Date());
+
+  const upcomingEvents = [...events]
+    .filter(e => e.date >= todayStr)
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.time.localeCompare(b.time);
+    });
+
+  const myUpcomingBookings = bookings.filter(b => 
+    b.userId === profile.uid && b.endDate >= todayStr && b.status !== 'cancelled'
+  );
+
+  const upcomingCleaningDaysCount = upcomingEvents.filter(e => e.type === 'cleaning_day').length;
+
+  const getFriendlyEventDate = (dateStr: string) => {
+    if (dateStr === todayStr) return 'Oggi';
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomStr = formatDateString(tomorrow);
+    if (dateStr === tomStr) return 'Domani';
+
+    const [y, m, d] = dateStr.split('-');
+    const mIdx = parseInt(m, 10) - 1;
+    const monthsAbbr = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    return `${parseInt(d, 10)} ${monthsAbbr[mIdx] || m}`;
   };
 
   return (
@@ -543,7 +570,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ profile }) => {
       <header className="p-4 bg-stone-900 border-b border-stone-800/80 sticky top-0 z-20" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[9px] font-black tracking-widest text-emerald-500 uppercase">Val Masino Climbing ASD</span>
+            <span className="text-[9px] font-black tracking-widest text-emerald-505 uppercase">Val Masino Climbing ASD</span>
             <h2 className="text-xl font-black uppercase tracking-tighter italic flex items-center gap-1.5">
               <CalendarIcon className="w-5 h-5 text-emerald-500" /> Calendario Sociale
             </h2>
@@ -588,6 +615,120 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ profile }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* RIEPILOGO IMPEGNI IN ALTO */}
+      <div className="px-6 pt-5 pb-0.5 space-y-4">
+        <div className="bg-gradient-to-r from-stone-900 via-stone-850/60 to-stone-900 border border-stone-800 rounded-3xl p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div>
+              <span className="text-[8px] font-black tracking-widest text-emerald-500 uppercase">Overview</span>
+              <h3 className="text-md font-black text-white uppercase italic tracking-tighter flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-emerald-500" /> Riepilogo Impegni e Attività
+              </h3>
+              <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">Un colpo d'occhio sulle attività programmate nel club</p>
+            </div>
+
+            {/* Micro Stats Row */}
+            <div className="flex gap-4">
+              <div className="bg-stone-850/60 border border-stone-800 px-3.5 py-1.5 rounded-2xl flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <div className="text-left">
+                  <p className="text-[8px] font-bold text-stone-500 uppercase leading-none">In programma</p>
+                  <p className="text-xs font-black text-stone-200 mt-0.5">{upcomingEvents.length}</p>
+                </div>
+              </div>
+
+              <div className="bg-stone-850/60 border border-stone-800 px-3.5 py-1.5 rounded-2xl flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="text-left">
+                  <p className="text-[8px] font-bold text-stone-500 uppercase leading-none">I miei prestiti</p>
+                  <p className="text-xs font-black text-stone-200 mt-0.5">{myUpcomingBookings.length}</p>
+                </div>
+              </div>
+
+              <div className="bg-stone-850/60 border border-stone-800 px-3.5 py-1.5 rounded-2xl flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-400" />
+                <div className="text-left">
+                  <p className="text-[8px] font-bold text-stone-500 uppercase leading-none">Pulizie Massi</p>
+                  <p className="text-xs font-black text-stone-200 mt-0.5">{upcomingCleaningDaysCount}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {upcomingEvents.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {upcomingEvents.slice(0, 3).map(ev => {
+                const isAttendee = ev.participants.includes(profile.uid);
+                const friendlyDate = getFriendlyEventDate(ev.date);
+                const isCleaning = ev.type === 'cleaning_day';
+
+                return (
+                  <div
+                    key={ev.id}
+                    onClick={() => {
+                      const [y, m, d] = ev.date.split('-');
+                      const targetDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+                      setSelectedDate(targetDate);
+                      setCurrentDate(new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1));
+                    }}
+                    className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all hover:scale-[1.01] flex flex-col justify-between group active:scale-[0.99] ${
+                      isCleaning 
+                        ? 'bg-emerald-950/15 border-emerald-500/20 hover:border-emerald-500/40' 
+                        : 'bg-stone-800/40 border-stone-800/80 hover:border-stone-700/80'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className={`px-1.5 py-0.5 text-[7px] font-extrabold uppercase tracking-wider rounded-md ${
+                          isCleaning ? 'bg-emerald-500/20 text-emerald-400' : 'bg-stone-700 text-stone-300'
+                        }`}>
+                          {isCleaning ? '🧹 Pulizia Massi' : '🤝 Evento/Sociale'}
+                        </span>
+                        
+                        <div className="flex items-center gap-1 bg-stone-900/60 px-2 py-0.5 rounded-full border border-stone-800/50">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="text-[8.5px] font-extrabold tracking-wide text-stone-200">{friendlyDate}</span>
+                        </div>
+                      </div>
+
+                      <h4 className="text-[12.5px] font-black uppercase text-stone-100 group-hover:text-emerald-400 transition-colors line-clamp-1 leading-tight">{ev.title}</h4>
+                      <p className="text-[9px] text-stone-400 font-bold uppercase tracking-wide line-clamp-1 mt-0.5">{ev.description}</p>
+                    </div>
+
+                    <div className="mt-3 pt-2 border-t border-stone-800/30 flex items-center justify-between text-[8px] font-extrabold uppercase tracking-wider">
+                      <div className="flex items-center gap-1.5 text-stone-400">
+                        <Clock className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span>{ev.time}</span>
+                        <span className="text-stone-600">|</span>
+                        <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span className="max-w-[70px] truncate">{ev.location}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {isAttendee ? (
+                          <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-0.5 shrink-0 animate-none">
+                            <Check className="w-2.5 h-2.5" /> Tu partecipi
+                          </span>
+                        ) : (
+                          <span className="text-[8px] font-medium text-stone-400 bg-stone-800 px-1.5 py-0.5 rounded-md">
+                            {ev.participants.length} iscritti
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-6 flex flex-col items-center justify-center text-center text-stone-500 border border-dashed border-stone-800 rounded-2xl">
+              <CalendarDays className="w-6 h-6 text-stone-750 mb-1" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Nessun impegno pianificato per i prossimi giorni</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         

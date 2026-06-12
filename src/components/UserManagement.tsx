@@ -80,7 +80,7 @@ const handleFirestoreError = (error: unknown, operationType: OperationType, path
 };
 
 export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'calendar' | 'equipment' | 'logs'>('users');
+  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'calendar' | 'equipment' | 'logs'>('equipment');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingUid, setDeletingUid] = useState<string | null>(null);
@@ -527,12 +527,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile
         {/* Administration Core Tabs */}
         <div className="flex gap-2 border-t border-stone-100 pt-4 flex-wrap">
           <button
-            onClick={() => setActiveAdminTab('users')}
+            onClick={() => setActiveAdminTab('equipment')}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeAdminTab === 'users' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              activeAdminTab === 'equipment' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
             }`}
           >
-            <UserIcon className="w-4 h-4" /> Membri
+            <Package className="w-4 h-4" /> Attrezzatura
           </button>
           <button
             onClick={() => setActiveAdminTab('calendar')}
@@ -543,12 +543,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile
             <CalendarIcon className="w-4 h-4" /> Calendario
           </button>
           <button
-            onClick={() => setActiveAdminTab('equipment')}
+            onClick={() => setActiveAdminTab('users')}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeAdminTab === 'equipment' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              activeAdminTab === 'users' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
             }`}
           >
-            <Package className="w-4 h-4" /> Attrezzatura
+            <UserIcon className="w-4 h-4" /> Membri
           </button>
           {isAdmin && (
             <button
