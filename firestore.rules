@@ -74,16 +74,17 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isAuthenticated() && 
              request.auth.token.email != null &&
-             (request.auth.token.email.matches('(?i)^asdadmin@scalamasino[.]com$') || 
-              request.auth.token.email.matches('(?i)^asdadmin@valmasinoclimbing[.]com$') || 
-              request.auth.token.email.matches('(?i)^videoclipalessandrosangiorgio@gmail[.]com$'));
+             (request.auth.token.email.lower() == 'asdadmin@scalamasino.com' || 
+              request.auth.token.email.lower() == 'asdadmin@valmasinoclimbing.com' || 
+              request.auth.token.email.lower() == 'videoclipalessandrosangiorgio@gmail.com');
     }
 
     function isActive() {
       return isSuperAdmin() || (
         isAuthenticated() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'pending')
       );
     }
 
@@ -94,6 +95,30 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
       );
+    }
+
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 120 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.date is string && data.date.size() == 10 &&
+             data.time is string && data.time.size() <= 10 &&
+             data.type in ['cleaning_day', 'general', 'gathering', 'meeting'] &&
+             data.location is string && data.location.size() <= 120 &&
+             data.createdBy is string && data.createdBy.size() < 128 &&
+             (!('createdByDisplayName' in data) || (data.createdByDisplayName is string && data.createdByDisplayName.size() < 128)) &&
+             (!('participants' in data) || (data.participants is list && data.participants.size() <= 100)) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidBooking(data) {
+      return data.equipmentId is string && data.equipmentId.size() < 128 &&
+             data.equipmentName is string && data.equipmentName.size() > 0 && data.equipmentName.size() < 128 &&
+             data.userId is string && data.userId.size() < 128 &&
+             (!('userDisplayName' in data) || (data.userDisplayName is string && data.userDisplayName.size() < 128)) &&
+             data.startDate is string && data.startDate.size() == 10 &&
+             data.endDate is string && data.endDate.size() == 10 &&
+             data.status in ['pending', 'approved', 'cancelled'] &&
+             data.createdAt is timestamp;
     }
 
     match /users/{userId} {
@@ -124,8 +149,8 @@ service cloud.firestore {
       allow update: if isActive() && 
                       (
                         ((isDocOwner() || isAdmin()) && 
-                         isValidBlock(request.resource.data) && 
-                         request.resource.data.createdBy == resource.data.createdBy) ||
+                          isValidBlock(request.resource.data) && 
+                          request.resource.data.createdBy == resource.data.createdBy) ||
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favorite', 'visited']))
                       );
                       
@@ -156,6 +181,36 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if true;
       allow update, delete: if isAdmin();
+    }
+
+    match /equipment/{equipmentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /equipment_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isActive() && isValidEvent(request.resource.data) && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isActive() && (
+        (isAdmin() && isValidEvent(request.resource.data)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) && request.resource.data.participants is list && request.resource.data.participants.size() <= 100)
+      );
+      allow delete: if isActive() && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
+    match /equipment_bookings/{bookingId} {
+      allow read: if true;
+      allow create: if isActive() && isValidBooking(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update: if isActive() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['startDate', 'endDate', 'status']) && request.resource.data.status == 'cancelled') ||
+        (isAdmin() && isValidBooking(request.resource.data))
+      );
+      allow delete: if isActive() && (resource.data.userId == request.auth.uid || isAdmin());
     }
   }
 }

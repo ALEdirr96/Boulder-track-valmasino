@@ -3,7 +3,7 @@ import {
   User as UserIcon, Trash2, Mail, Shield, X, Loader2, Save, Undo2, LogIn,
   Check, Ban, UserX, UserCheck, Clock, KeyRound, AlertTriangle, Palette, 
   FileText, Edit2, ShieldAlert, Mountain, HelpCircle, Upload, Link, RotateCcw,
-  ExternalLink
+  ExternalLink, Wrench, Calendar as CalendarIcon, Package
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
@@ -23,9 +23,12 @@ import {
 } from 'firebase/firestore';
 import { db, firebaseConfigExport } from '../firebase';
 import { logActivity } from '../lib/logger';
+import { EquipmentManagement } from './EquipmentManagement';
+import { CalendarView } from './CalendarView';
 
 interface UserManagementProps {
   onClose: () => void;
+  profile: UserProfile;
 }
 
 enum OperationType {
@@ -76,14 +79,29 @@ const handleFirestoreError = (error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 };
 
-export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'theme' | 'logs'>('users');
+export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile }) => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'calendar' | 'equipment' | 'logs'>('users');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingUid, setDeletingUid] = useState<string | null>(null);
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'active' | 'blocked'>('all');
+
+  // Forward floating action button clicks depending on active view
+  useEffect(() => {
+    const handleTeamAddClick = () => {
+      if (activeAdminTab === 'calendar') {
+        window.dispatchEvent(new CustomEvent('app-add-calendar-event'));
+      } else if (activeAdminTab === 'equipment') {
+        window.dispatchEvent(new CustomEvent('app-add-equipment-borrow'));
+      }
+    };
+    window.addEventListener('app-team-add-click', handleTeamAddClick);
+    return () => {
+      window.removeEventListener('app-team-add-click', handleTeamAddClick);
+    };
+  }, [activeAdminTab]);
   
   // Security confirmation state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -490,11 +508,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
   return (
     <div className="flex flex-col h-full bg-stone-100">
       {/* Header Panel */}
-      <header className="p-6 bg-white border-b border-stone-200 sticky top-0 z-20">
+      <header className="p-4 bg-white border-b border-stone-200 sticky top-0 z-20" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-black text-stone-900 uppercase italic">Controllo ASD</h2>
-            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Opzioni Amministrative & Registri</p>
+            <h2 className="text-xl font-black text-stone-900 uppercase italic">Team ASD</h2>
+            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Membri, Calendario & Attrezzature del Club</p>
           </div>
           <div className="flex items-center gap-2">
             <button 
@@ -507,7 +525,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
         </div>
 
         {/* Administration Core Tabs */}
-        <div className="flex gap-2 border-t border-stone-100 pt-4">
+        <div className="flex gap-2 border-t border-stone-100 pt-4 flex-wrap">
           <button
             onClick={() => setActiveAdminTab('users')}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
@@ -517,21 +535,31 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
             <UserIcon className="w-4 h-4" /> Membri
           </button>
           <button
-            onClick={() => setActiveAdminTab('theme')}
+            onClick={() => setActiveAdminTab('calendar')}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeAdminTab === 'theme' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              activeAdminTab === 'calendar' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
             }`}
           >
-            <Palette className="w-4 h-4" /> Stile & Colori
+            <CalendarIcon className="w-4 h-4" /> Calendario
           </button>
           <button
-            onClick={() => setActiveAdminTab('logs')}
+            onClick={() => setActiveAdminTab('equipment')}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeAdminTab === 'logs' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              activeAdminTab === 'equipment' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
             }`}
           >
-            <FileText className="w-4 h-4" /> Registri Log
+            <Package className="w-4 h-4" /> Attrezzatura
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => setActiveAdminTab('logs')}
+              className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeAdminTab === 'logs' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              }`}
+            >
+              <FileText className="w-4 h-4" /> Registri Log
+            </button>
+          )}
         </div>
       </header>
 
@@ -787,175 +815,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
           </div>
         )}
 
-        {/* SUBVIEW 2: THEME & COLOR PERSONALIZATION */}
-        {activeAdminTab === 'theme' && (
-          <div className="p-6 max-w-lg mx-auto">
-            <form onSubmit={handleSaveThemeSettings} className="bg-white border text-stone-800 border-stone-200/60 rounded-[2.5rem] p-6 shadow-sm space-y-6">
-              <h3 className="text-md font-black uppercase tracking-tighter italic border-b border-stone-100 pb-3 flex items-center gap-2">
-                <Palette className="w-5 h-5 text-brand" /> Personalizzazione Grafica
-              </h3>
-
-              {/* Theme Presets */}
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Colore Accento Principale</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'emerald', label: 'Verde Smeraldo', colorClass: 'bg-emerald-600' },
-                    { value: 'red', label: 'Rosso Rubino', colorClass: 'bg-red-500' },
-                    { value: 'blue', label: 'Blu Zaffiro', colorClass: 'bg-blue-600' },
-                    { value: 'amber', label: 'Giallo Ambra', colorClass: 'bg-amber-600' },
-                    { value: 'violet', label: 'Twilight Viola', colorClass: 'bg-violet-600' },
-                    { value: 'stone', label: 'Nero Stealth', colorClass: 'bg-stone-600' },
-                  ].map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setAccentColor(opt.value)}
-                      className={`p-3.5 rounded-2xl flex items-center gap-3 border-2 outline-none transition-all text-left cursor-pointer ${
-                        accentColor === opt.value ? 'border-brand bg-stone-50' : 'border-stone-100 hover:border-stone-200 bg-white'
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded-lg shrink-0 shadow-sm ${opt.colorClass}`} />
-                      <span className="text-xs font-bold text-stone-700">{opt.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Brand Text */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Branding Text / Testo Logo</label>
-                <input
-                  type="text"
-                  value={logoText}
-                  onChange={(e) => setLogoText(e.target.value)}
-                  placeholder="Es: ASD Val Masino Climbing"
-                  maxLength={40}
-                  className="w-full p-3 bg-stone-50 border-2 border-stone-100 rounded-2xl text-xs font-bold outline-none focus:border-brand transition-colors"
-                />
-              </div>
-
-              {/* Logo Show/Hide */}
-              <div className="space-y-2 flex items-center justify-between bg-stone-50 p-4 rounded-2xl border border-stone-100">
-                <div>
-                  <label className="text-xs font-bold text-stone-800 uppercase tracking-tight block">Simbolo Icona Montagna</label>
-                  <span className="text-[8px] text-stone-400 uppercase font-black tracking-wider">Mostra o nascondi l'icona della montagna</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowLogoSymbol(!showLogoSymbol)}
-                  className={`w-12 h-6 rounded-full p-1 transition-colors relative cursor-pointer outline-none ${
-                    showLogoSymbol ? 'bg-brand' : 'bg-stone-300'
-                  }`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
-                    showLogoSymbol ? 'translate-x-6' : 'translate-x-0'
-                  }`} />
-                </button>
-              </div>
-
-              {/* Custom Image/Logo Symbol Selection */}
-              {showLogoSymbol && (
-                <div className="space-y-3 bg-stone-50 p-4 rounded-3xl border border-stone-100 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-stone-800 uppercase tracking-tight block">Personalizza Simbolo con Immagine</label>
-                    {logoImage && (
-                      <button
-                        type="button"
-                        onClick={() => setLogoImage(null)}
-                        className="text-[9px] font-black uppercase tracking-wider text-red-500 flex items-center gap-1 hover:underline cursor-pointer outline-none"
-                      >
-                        <RotateCcw className="w-3 h-3" /> Ripristina Default
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="grid grid-cols-1 gap-3">
-                    {/* Option A: Image Upload */}
-                    <div className="space-y-1">
-                      <span className="text-[8px] text-stone-400 uppercase font-black tracking-widest block mb-1">Metodo A: Carica immagine locale</span>
-                      <div className="relative border-2 border-dashed border-stone-200 hover:border-brand rounded-2xl p-4 transition-colors bg-white flex flex-col items-center justify-center text-center cursor-pointer group">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            
-                            // Check file size limit to prevent oversized data in storage
-                            if (file.size > 153600) {
-                              alert("L'immagine è troppo grande! Carica un file inferiore a 150KB, oppure usa un URL online.");
-                              return;
-                            }
-
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              if (typeof reader.result === 'string') {
-                                setLogoImage(reader.result);
-                              }
-                            };
-                            reader.readAsDataURL(file);
-                          }}
-                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                        />
-                        <Upload className="w-5 h-5 text-stone-400 group-hover:text-brand transition-colors mb-1" />
-                        <span className="text-[10px] font-bold text-stone-600">Carica immagine</span>
-                        <span className="text-[8px] text-stone-400 mt-0.5">PNG, JPG, SVG o WebP (max 150KB)</span>
-                      </div>
-                    </div>
-
-                    {/* Option B: Image URL */}
-                    <div className="space-y-1">
-                      <span className="text-[8px] text-stone-400 uppercase font-black tracking-widest block mb-1">Metodo B: Inserisci URL Immagine online</span>
-                      <div className="relative flex items-center">
-                        <Link className="w-4 h-4 text-stone-400 absolute left-3" />
-                        <input
-                          type="url"
-                          placeholder="https://esempio.com/logo.png"
-                          value={logoImage && !logoImage.startsWith('data:') ? logoImage : ''}
-                          onChange={(e) => setLogoImage(e.target.value || null)}
-                          className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none focus:border-brand transition-colors"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Live Preview Card */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest block">Anteprima Istantanea Branding</label>
-                <div className="p-4 bg-stone-900 rounded-3xl flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden" style={{ backgroundColor: accentColor === 'stone' ? '#4b5563' : 'rgba(16, 185, 129, 0.15)' }}>
-                    {showLogoSymbol ? (
-                      logoImage ? (
-                        <img src={logoImage} alt="Logo" className="w-full h-full object-cover" />
-                      ) : (
-                        <Mountain className="w-4 h-4" style={{ color: accentColor === 'stone' ? '#fff' : 'var(--color-accent-primary)' }} />
-                      )
-                    ) : (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                    )}
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-white italic uppercase">I Blocchi</h4>
-                    <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest block mt-0.5">{logoText} Explorer</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit Buttons */}
-              <button
-                type="submit"
-                disabled={savingTheme}
-                className="w-full py-4 bg-brand text-white font-black text-[10px] uppercase tracking-widest italic rounded-2xl shadow-xl shadow-brand/20 flex items-center justify-center gap-2 cursor-pointer hover:bg-brand-hover active:scale-98 transition-colors disabled:opacity-55"
-              >
-                {savingTheme ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salva Impostazioni
-              </button>
-            </form>
-          </div>
+        {/* SUBVIEW: CALENDAR */}
+        {activeAdminTab === 'calendar' && (
+          <CalendarView profile={profile} />
         )}
+
+        {/* SUBVIEW: EQUIPMENT MANAGEMENT */}
+        {activeAdminTab === 'equipment' && (
+          <EquipmentManagement profile={profile} />
+        )}
+
+
 
         {/* SUBVIEW 3: ACTIVITY LOG MANAGEMENT */}
         {activeAdminTab === 'logs' && (

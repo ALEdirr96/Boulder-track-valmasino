@@ -1,5 +1,6 @@
 {
   "name": "Boulder Tracker",
   "description": "A mobile-first app for tracking and navigating to new boulder problems in the wild.",
-  "requestFramePermissions": ["geolocation"]
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

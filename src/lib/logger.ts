@@ -3,7 +3,7 @@ import { db } from '../firebase';
 
 export async function logActivity(
   action: string,
-  type: 'block' | 'user' | 'settings',
+  type: 'block' | 'user' | 'settings' | 'equipment',
   userProfile: { uid: string; email?: string; displayName?: string }
 ) {
   try {

@@ -67,3 +67,29 @@ export interface BlockReview {
   createdAt: any;
   updatedAt?: any;
 }
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  type: 'cleaning_day' | 'general' | 'gathering' | 'meeting';
+  location: string;
+  createdBy: string;
+  createdByDisplayName?: string;
+  participants: string[]; // List of UIDs
+  createdAt: any;
+}
+
+export interface EquipmentBooking {
+  id: string;
+  equipmentId: string;
+  equipmentName: string;
+  userId: string;
+  userDisplayName: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  status: 'pending' | 'approved' | 'cancelled';
+  createdAt: any;
+}

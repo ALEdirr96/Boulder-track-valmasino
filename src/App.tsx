@@ -37,9 +37,12 @@ import { BlockForm } from './components/BlockForm';
 import { MapView } from './components/MapView';
 import { Compass } from './components/Compass';
 import { UserManagement } from './components/UserManagement';
+import { CalendarView } from './components/CalendarView';
+import { EquipmentManagement } from './components/EquipmentManagement';
 import { logActivity } from './lib/logger';
 import { Logo } from './components/Logo';
 import { useLocation } from './hooks/useLocation';
+import officialLogoUrl from './assets/images/official_symbol_scalamasino_1779367181213.png';
 import { 
   Loader2, LogIn, Mountain, Filter, 
   CheckCircle, Star, AlertCircle, X,
@@ -96,7 +99,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-type View = 'list' | 'map' | 'detail' | 'form' | 'guide' | 'profile' | 'admin';
+type View = 'list' | 'map' | 'calendar' | 'equipment' | 'detail' | 'form' | 'guide' | 'profile' | 'admin';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -107,7 +110,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('list');
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [editingBlock, setEditingBlock] = useState<Block | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'map' | 'profile' | 'admin'>('home');
+  const [activeTab, setActiveTab ] = useState<'home' | 'map' | 'calendar' | 'equipment' | 'profile' | 'admin' | 'equipment'>('home');
   const [filter, setFilter] = useState<BlockStatus | 'all' | 'favorite' | 'visited'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isGuest, setIsGuest] = useState(false);
@@ -130,7 +133,7 @@ export default function App() {
     accentColor: 'emerald',
     logoText: 'ASD Val Masino Climbing',
     showLogoSymbol: true,
-    logoImage: null,
+    logoImage: officialLogoUrl,
   });
 
   useEffect(() => {
@@ -145,7 +148,7 @@ export default function App() {
           accentColor: data.accentColor || 'emerald',
           logoText: fetchedLogoText,
           showLogoSymbol: data.showLogoSymbol !== false,
-          logoImage: data.logoImage || null,
+          logoImage: data.logoImage || officialLogoUrl,
         });
       }
     }, (error) => {
@@ -445,9 +448,9 @@ export default function App() {
       return (
         <div className="h-screen flex flex-col items-center justify-center bg-stone-900 p-8 text-center overflow-y-auto w-full">
           {appTheme.showLogoSymbol && (
-            <div className="w-16 h-16 bg-brand-light rounded-3xl flex items-center justify-center mb-6 overflow-hidden">
+            <div className="w-16 h-16 bg-brand-light rounded-3xl flex items-center justify-center mb-6 overflow-hidden border border-brand/10">
               {appTheme.logoImage ? (
-                <img src={appTheme.logoImage} alt="Logo" className="w-full h-full object-cover" />
+                <img src={appTheme.logoImage} alt="Logo" className="w-full h-full object-contain p-2" />
               ) : (
                 <Mountain className="w-8 h-8 text-brand" />
               )}
@@ -667,13 +670,13 @@ export default function App() {
       case 'list':
         return (
           <div className="flex flex-col h-full bg-stone-900">
-            <header className="p-6 pb-2 bg-stone-900 sticky top-0 z-10">
+            <header className="p-4 pb-2 bg-stone-900 sticky top-0 z-10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                   {appTheme.showLogoSymbol && (
-                    <div className="w-10 h-10 bg-brand-light rounded-2xl flex items-center justify-center overflow-hidden">
+                    <div className="w-10 h-10 bg-brand-light rounded-2xl flex items-center justify-center overflow-hidden border border-brand/10">
                       {appTheme.logoImage ? (
-                        <img src={appTheme.logoImage} alt="Logo" className="w-full h-full object-cover" />
+                        <img src={appTheme.logoImage} alt="Logo" className="w-full h-full object-contain p-1" />
                       ) : (
                         <Mountain className="w-5 h-5 text-brand" />
                       )}
@@ -787,23 +790,35 @@ export default function App() {
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 pb-32">
+            <div className="flex-1 overflow-y-auto p-4 pb-44" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)' }}>
               {loading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-stone-700" />
                 </div>
               ) : filteredBlocks.length > 0 ? (
-                filteredBlocks.map(block => (
-                   <div key={block.id} className="relative">
-                      <BlockCard
-                        block={block}
-                        onClick={() => {
-                          setSelectedBlock(block);
-                          setCurrentView('detail');
-                        }}
-                      />
-                   </div>
-                ))
+                <>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    {filteredBlocks.map(block => (
+                       <div key={block.id} className="relative">
+                          <BlockCard
+                            block={block}
+                            onClick={() => {
+                              setSelectedBlock(block);
+                              setCurrentView('detail');
+                            }}
+                          />
+                       </div>
+                    ))}
+                  </div>
+
+                  {/* Partner Footer */}
+                  <div className="pt-12 pb-8 flex flex-col items-center gap-4">
+                     <div className="w-16 h-1 bg-stone-800 rounded-full" />
+                     <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest italic text-center max-w-[240px]">
+                       Created by Alessandro Sangiorgio for ASD Val Masino Climbing
+                     </p>
+                  </div>
+                </>
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="w-16 h-16 bg-stone-800 rounded-full flex items-center justify-center mb-4 border border-stone-700">
@@ -812,14 +827,6 @@ export default function App() {
                   <p className="text-stone-500 font-bold uppercase tracking-widest text-xs">Nessun blocco trovato</p>
                 </div>
               )}
-              
-              {/* Partner Footer */}
-              <div className="pt-12 pb-8 flex flex-col items-center gap-4">
-                 <div className="w-16 h-1 bg-stone-800 rounded-full" />
-                 <p className="text-[10px] font-black text-stone-600 uppercase tracking-widest italic text-center">
-                   Created by Alessandro Sangiorgio for ASD Val Masino Climbing
-                 </p>
-              </div>
             </div>
           </div>
         );
@@ -972,6 +979,16 @@ export default function App() {
           </div>
         );
 
+      case 'calendar':
+        return profile ? (
+          <CalendarView profile={profile} />
+        ) : null;
+
+      case 'equipment':
+        return profile ? (
+          <EquipmentManagement profile={profile} />
+        ) : null;
+
       case 'profile':
         return (
           <div className="flex flex-col h-full bg-stone-900 p-8 pt-16">
@@ -1073,8 +1090,8 @@ export default function App() {
         );
 
       case 'admin':
-        return profile.role === 'admin' ? (
-          <UserManagement onClose={() => { setCurrentView('list'); setActiveTab('home'); }} />
+        return profile ? (
+          <UserManagement profile={profile} onClose={() => { setCurrentView('list'); setActiveTab('home'); }} />
         ) : null;
 
       default:
@@ -1086,13 +1103,7 @@ export default function App() {
     <Layout
       activeTab={activeTab}
       onTabChange={(tab) => {
-        if (isGuest && (tab === 'profile' || tab === 'admin')) return;
-        
-        if (tab === 'admin' && profile?.role !== 'admin') {
-          setActiveTab('home');
-          setCurrentView('list');
-          return;
-        }
+        if (isGuest && (tab === 'profile' || tab === 'admin' || tab === 'equipment')) return;
         
         setActiveTab(tab);
         if (tab === 'home') {
@@ -1104,7 +1115,10 @@ export default function App() {
         }
       }}
       onAddClick={() => {
-        if (profile) {
+        if (!profile) return;
+        if (activeTab === 'admin') {
+          window.dispatchEvent(new CustomEvent('app-team-add-click'));
+        } else {
           setEditingBlock(null);
           setCurrentView('form');
         }

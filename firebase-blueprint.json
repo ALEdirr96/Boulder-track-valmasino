@@ -69,6 +69,68 @@
         "createdAt": { "type": "string", "format": "date" }
       },
       "required": ["userId", "userEmail", "rating", "comment", "hasClimbed"]
+    },
+    "Equipment": {
+      "title": "Equipment",
+      "description": "Association equipment registry",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the equipment" },
+        "category": { "type": "string", "description": "Category of the equipment" },
+        "status": { "type": "string", "enum": ["available", "borrowed", "maintenance"], "description": "Current status" },
+        "serialNumber": { "type": "string", "description": "Optional serial number" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["name", "category", "status", "createdAt"]
+    },
+    "EquipmentLog": {
+      "title": "EquipmentLog",
+      "description": "Log of actions performed on equipment",
+      "type": "object",
+      "properties": {
+        "equipmentId": { "type": "string", "description": "Associated equipment ID" },
+        "equipmentName": { "type": "string", "description": "Name of the equipment" },
+        "personName": { "type": "string", "description": "Name of the person who took/returned the item" },
+        "action": { "type": "string", "enum": ["borrow", "return", "maintenance"], "description": "Logged action type" },
+        "dateTime": { "type": "string", "format": "date-time", "description": "Timestamp of action" },
+        "adminId": { "type": "string", "description": "Admin UID who processed the action" },
+        "notes": { "type": "string", "description": "Optional details" }
+      },
+      "required": ["equipmentId", "equipmentName", "personName", "action", "dateTime", "adminId"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Calendar events like group cleaning days and gatherings",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the event" },
+        "description": { "type": "string", "description": "Event detailed description" },
+        "date": { "type": "string", "description": "Event date (YYYY-MM-DD)" },
+        "time": { "type": "string", "description": "Event event meeting time (HH:MM)" },
+        "type": { "type": "string", "enum": ["cleaning_day", "general", "gathering", "meeting"], "description": "Event type" },
+        "createdBy": { "type": "string", "description": "User UID who created the event" },
+        "createdByDisplayName": { "type": "string", "description": "Display name of the creator" },
+        "location": { "type": "string", "description": "Event location coordinate or descriptive meeting spot" },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "Array of participant user UIDs" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp" }
+      },
+      "required": ["title", "date", "type", "createdBy", "createdAt"]
+    },
+    "EquipmentBooking": {
+      "title": "EquipmentBooking",
+      "description": "Booking reservation of association equipment",
+      "type": "object",
+      "properties": {
+        "equipmentId": { "type": "string", "description": "ID of the associated equipment" },
+        "equipmentName": { "type": "string", "description": "Name of the associated equipment" },
+        "userId": { "type": "string", "description": "User UID who reserved" },
+        "userDisplayName": { "type": "string", "description": "Display name of the reserving user" },
+        "startDate": { "type": "string", "description": "Start date of booking (YYYY-MM-DD)" },
+        "endDate": { "type": "string", "description": "End date of booking (YYYY-MM-DD)" },
+        "status": { "type": "string", "enum": ["pending", "approved", "cancelled"], "description": "Booking status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["equipmentId", "equipmentName", "userId", "userDisplayName", "startDate", "endDate", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -87,6 +149,22 @@
     "/settings/{settingsId}": {
       "schema": "Settings",
       "description": "Configuration presets"
+    },
+    "/equipment/{equipmentId}": {
+      "schema": "Equipment",
+      "description": "Association equipment registry"
+    },
+    "/equipment_logs/{logId}": {
+      "schema": "EquipmentLog",
+      "description": "Audit logs for equipment movements and actions"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Group cleaning events and administrative/social gathers"
+    },
+    "/equipment_bookings/{bookingId}": {
+      "schema": "EquipmentBooking",
+      "description": "Equipment reservation bookings list"
     }
   }
 }
