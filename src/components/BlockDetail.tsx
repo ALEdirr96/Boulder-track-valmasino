@@ -312,7 +312,9 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
           <div className="bg-white p-3 flex flex-col items-center justify-center text-center">
             <Ruler className="w-4 h-4 text-stone-400 mb-1" />
             <span className="text-[10px] font-black text-stone-800">{block.height || '---'}m</span>
-            <span className="text-[8px] text-stone-400 uppercase tracking-wider">Altezza</span>
+            <span className="text-[8px] text-stone-400 uppercase tracking-wider">
+              {block.type === 'falesia' ? 'Sviluppo' : 'Altezza'}
+            </span>
           </div>
           <div className="bg-white p-3 flex flex-col items-center justify-center text-center">
             <Sun className="w-4 h-4 text-stone-400 mb-1" />
@@ -394,7 +396,9 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
           {/* Lines Table */}
           {block.lines && block.lines.length > 0 && (
             <section className="space-y-4">
-              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Linee / Boulder ({block.lines.length})</h3>
+              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest">
+                {block.type === 'falesia' ? `Vie / Tiri (${block.lines.length})` : `Linee / Boulder (${block.lines.length})`}
+              </h3>
               <div className="bg-white border border-stone-100 rounded-3xl overflow-hidden shadow-sm">
                 {block.lines.map((line, idx) => (
                   <div key={line.id || idx} className="p-4 flex items-center justify-between border-b last:border-0 border-stone-50">
@@ -405,7 +409,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                         </div>
                       )}
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-stone-800">{line.name || `Linea ${idx + 1}`}</span>
+                        <span className="text-sm font-bold text-stone-800">{line.name || (block.type === 'falesia' ? `Via ${idx + 1}` : `Linea ${idx + 1}`)}</span>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-bold text-stone-400 uppercase tracking-tight italic">
                             {line.status === 'clean' ? 'Pulito' : line.status === 'project' ? 'Progetto' : 'Nuovo'}
@@ -560,7 +564,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
               {block.lines && block.lines.length > 0 && (
                 <div className="space-y-2 bg-stone-50/40 p-3.5 rounded-2xl border border-stone-100/80">
                   <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">
-                    Quali linee hai salito? (Seleziona per segnarle)
+                    {block.type === 'falesia' ? 'Quali vie hai salito? (Seleziona per segnarle)' : 'Quali linee hai salito? (Seleziona per segnarle)'}
                   </label>
                   <div className="space-y-1 py-1 max-h-48 overflow-y-auto no-scrollbar">
                     {block.lines.map((line, idx) => {
@@ -583,12 +587,12 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                               "w-5 h-5 rounded-md flex items-center justify-center border transition-all duration-150 shrink-0",
                               isSelected 
                                 ? "bg-emerald-600 border-emerald-600 text-white" 
-                                : "border-stone-300 bg-white text-transparent"
+                               : "border-stone-300 bg-white text-transparent"
                             )}>
                               <Check className="w-3.5 h-3.5 stroke-[3]" />
                             </div>
                             <span className="text-xs">
-                              {line.number ? `${line.number}. ` : ''}{line.name || `Linea ${idx + 1}`}
+                              {line.number ? `${line.number}. ` : ''}{line.name || (block.type === 'falesia' ? `Via ${idx + 1}` : `Linea ${idx + 1}`)}
                             </span>
                           </div>
                           <span className="text-[10px] font-black uppercase text-stone-450 bg-stone-100/80 px-2 py-0.5 rounded-md italic">
@@ -603,7 +607,9 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
 
               {/* 2. Rating in SASSI */}
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">Valutazione Blocco (SASSI)</label>
+                <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider block">
+                  {block.type === 'falesia' ? 'Valutazione Falesia (SASSI)' : 'Valutazione Blocco (SASSI)'}
+                </label>
                 <div className="flex items-center gap-2">
                   {renderSassi(rating, (r) => setRating(r))}
                   <span className="text-xs font-bold text-stone-500">
@@ -673,7 +679,9 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                       {/* Display climbed lines if any were selected */}
                       {climbedLineObjects.length > 0 && (
                         <div className="flex flex-col gap-1 pt-1 bg-stone-50/45 p-2 rounded-2xl border border-stone-100/40">
-                          <span className="text-[8px] font-black uppercase tracking-wider text-stone-400">Linee salite:</span>
+                          <span className="text-[8px] font-black uppercase tracking-wider text-stone-400">
+                            {block.type === 'falesia' ? 'Vie salite:' : 'Linee salite:'}
+                          </span>
                           <div className="flex flex-wrap gap-1">
                             {climbedLineObjects.map((line, idx) => (
                               <span 
@@ -685,7 +693,7 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
                                     {line.number}
                                   </span>
                                 )}
-                                <span>{line.name || `Linea ${idx + 1}`}</span>
+                                <span>{line.name || (block.type === 'falesia' ? `Via ${idx + 1}` : `Linea ${idx + 1}`)}</span>
                                 <span className="text-[8px] font-semibold text-stone-400 italic">({line.grade || '---'})</span>
                               </span>
                             ))}
@@ -722,26 +730,28 @@ export const BlockDetail: React.FC<BlockDetailProps> = ({
               {!showDeleteConfirm ? (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full flex items-center justify-center gap-2 p-4 text-red-500 font-black uppercase tracking-widest italic border-2 border-red-500/10 rounded-2xl active:bg-red-50 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 p-4 text-red-500 font-black uppercase tracking-widest italic border-2 border-red-500/10 rounded-2xl active:bg-red-50 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-5 h-5" />
-                  Elimina Blocco
+                  {block.type === 'falesia' ? 'Elimina Falesia' : 'Elimina Blocco'}
                 </button>
               ) : (
                 <div className="p-6 bg-red-50 rounded-3xl border-2 border-red-100 space-y-4">
                   <p className="text-red-700 text-sm font-bold text-center">
-                    Sei sicuro di voler eliminare definitivamente questo blocco? Questa azione non è reversibile.
+                    {block.type === 'falesia' 
+                      ? 'Sei sicuro di voler eliminare definitivamente questa falesia? Questa azione non è reversibile.'
+                      : 'Sei sicuro di voler eliminare definitivamente questo blocco? Questa azione non è reversibile.'}
                   </p>
                   <div className="flex gap-3">
                     <button
                       onClick={onDelete}
-                      className="flex-1 p-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest italic shadow-lg shadow-red-900/20"
+                      className="flex-1 p-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest italic shadow-lg shadow-red-900/20 cursor-pointer"
                     >
                       Sì, Elimina
                     </button>
                     <button
                       onClick={() => setShowDeleteConfirm(false)}
-                      className="flex-1 p-4 bg-white text-stone-500 rounded-2xl font-black uppercase tracking-widest italic border border-stone-200"
+                      className="flex-1 p-4 bg-white text-stone-500 rounded-2xl font-black uppercase tracking-widest italic border border-stone-200 cursor-pointer"
                     >
                       Annulla
                     </button>

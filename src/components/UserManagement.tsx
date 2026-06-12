@@ -542,14 +542,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile
           >
             <CalendarIcon className="w-4 h-4" /> Calendario
           </button>
-          <button
-            onClick={() => setActiveAdminTab('users')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeAdminTab === 'users' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
-            }`}
-          >
-            <UserIcon className="w-4 h-4" /> Membri
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setActiveAdminTab('users')}
+              className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeAdminTab === 'users' ? 'bg-brand text-white shadow-md shadow-brand/10' : 'bg-stone-50 text-stone-400 hover:text-stone-700'
+              }`}
+            >
+              <UserIcon className="w-4 h-4" /> Membri
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => setActiveAdminTab('logs')}
@@ -567,7 +569,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile
       <div className="flex-1 overflow-y-auto">
         
         {/* SUBVIEW 1: USERS MANAGEMENT */}
-        {activeAdminTab === 'users' && (
+        {activeAdminTab === 'users' && isAdmin && (
           <div className="w-full">
             <div className="p-4 border-b border-stone-200 bg-white/80 backdrop-blur-md flex gap-2 overflow-x-auto sticky top-0 z-10">
               {(['all', 'pending', 'active', 'blocked'] as const).map(f => (
@@ -828,7 +830,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose, profile
 
 
         {/* SUBVIEW 3: ACTIVITY LOG MANAGEMENT */}
-        {activeAdminTab === 'logs' && (
+        {activeAdminTab === 'logs' && isAdmin && (
           <div className="p-4 space-y-4">
             <div className="bg-white border border-stone-200/60 rounded-[2rem] p-5 shadow-sm space-y-2">
               <h3 className="text-sm font-black uppercase tracking-tighter italic text-stone-800 flex items-center gap-2">

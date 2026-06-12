@@ -51,6 +51,9 @@ export const BlockCard: React.FC<BlockCardProps> = ({ block, onClick }) => {
         )}>
           {STATUS_LABELS[block.status]}
         </div>
+        <div className="absolute top-8.5 left-2.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider bg-white/95 backdrop-blur-xs text-stone-700 shadow-xs border border-stone-200/50 flex items-center gap-1 select-none">
+          {block.type === 'falesia' ? '🧗 Falesia' : '🪨 Blocco'}
+        </div>
         {block.favorite && (
           <div className="absolute top-2.5 right-2.5 p-1 bg-white/90 backdrop-blur-sm rounded-full text-amber-500 shadow-xs border border-stone-150">
             <Star className="w-3.5 h-3.5 fill-current" />
@@ -84,7 +87,7 @@ export const BlockCard: React.FC<BlockCardProps> = ({ block, onClick }) => {
             {block.lines && block.lines.length > 0 && (
               <div className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
                 <Info className="w-2.5 h-2.5" />
-                {block.lines.length} Linee
+                {block.lines.length} {block.type === 'falesia' ? 'Vie' : 'Linee'}
               </div>
             )}
           </div>

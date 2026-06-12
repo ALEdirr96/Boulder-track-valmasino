@@ -52,6 +52,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
     name: '',
     area: '',
     status: 'new',
+    type: 'blocco',
     height: '',
     style: '',
     exposure: '',
@@ -222,7 +223,9 @@ export const BlockForm: React.FC<BlockFormProps> = ({
         </button>
         <div className="text-center">
           <h2 className="text-lg font-bold text-stone-800">
-            {initialData?.id ? 'Modifica Blocco' : 'Nuovo Blocco'}
+            {initialData?.id 
+              ? (formData.type === 'falesia' ? 'Modifica Falesia' : 'Modifica Blocco') 
+              : (formData.type === 'falesia' ? 'Nuova Falesia' : 'Nuovo Blocco')}
           </h2>
           <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">ASD Val Masino Climbing</p>
         </div>
@@ -238,15 +241,47 @@ export const BlockForm: React.FC<BlockFormProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-24">
         {/* Basic Info */}
         <section className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block">Tipo di Struttura *</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, type: 'blocco' })}
+                className={cn(
+                  "flex-1 py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                  formData.type !== 'falesia'
+                    ? "bg-stone-900 border-stone-850 text-white"
+                    : "bg-stone-50 border-stone-150 text-stone-550 hover:bg-stone-100"
+                )}
+              >
+                🪨 Blocco / Boulder
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, type: 'falesia' })}
+                className={cn(
+                  "flex-1 py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                  formData.type === 'falesia'
+                    ? "bg-emerald-600 border-emerald-500 text-white"
+                    : "bg-stone-50 border-stone-150 text-stone-550 hover:bg-stone-100"
+                )}
+              >
+                🧗 Falesia / Falesia
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-1">
-            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">Nome Blocco *</label>
+            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              {formData.type === 'falesia' ? 'Nome Falesia *' : 'Nome Blocco *'}
+            </label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-              placeholder="Es: Il Pilastro"
+              placeholder={formData.type === 'falesia' ? 'Es: Sasso di Remenno' : 'Es: Il Pilastro'}
             />
           </div>
 
@@ -263,13 +298,15 @@ export const BlockForm: React.FC<BlockFormProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scopritore / Proprietario Progetto</label>
+            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              {formData.type === 'falesia' ? 'Chiodatore / Libero Editore' : 'Scopritore / Proprietario Progetto'}
+            </label>
             <input
               type="text"
               value={formData.projectOwner || ''}
               onChange={(e) => setFormData({ ...formData, projectOwner: e.target.value })}
               className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-              placeholder="Nome di chi ha trovato/pulito il blocco"
+              placeholder={formData.type === 'falesia' ? 'Chi ha chiodato o creato il settore' : 'Nome di chi ha trovato/pulito il blocco'}
             />
           </div>
         </section>
@@ -419,26 +456,30 @@ export const BlockForm: React.FC<BlockFormProps> = ({
 
         <section className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">Altezza (m)</label>
+            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              {formData.type === 'falesia' ? 'Lunghezza Via / Altezza Falesia (m)' : 'Altezza (m)'}
+            </label>
             <input
               type="text"
               value={formData.height}
               onChange={(e) => setFormData({ ...formData, height: e.target.value })}
               className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl outline-none"
-              placeholder="Es: 3.5"
+              placeholder={formData.type === 'falesia' ? 'Es: 15' : 'Es: 3.5'}
             />
           </div>
         </section>
 
         <section className="space-y-4">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">Linee / Blocchi ({lines.length})</label>
+            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              {formData.type === 'falesia' ? `Vie / Tiri (${lines.length})` : `Linee / Blocchi (${lines.length})`}
+            </label>
             <button
               type="button"
               onClick={addLine}
-              className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-xs font-black uppercase tracking-widest"
+              className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-xs font-black uppercase tracking-widest cursor-pointer"
             >
-              + Aggiungi Linea
+              {formData.type === 'falesia' ? '+ Aggiungi Via' : '+ Aggiungi Linea'}
             </button>
           </div>
           
@@ -449,7 +490,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
                   <button 
                     type="button"
                     onClick={() => removeLine(line.id)}
-                    className="absolute top-2 right-2 p-2 text-stone-300 hover:text-red-500"
+                    className="absolute top-2 right-2 p-2 text-stone-300 hover:text-red-500 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -466,7 +507,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
                     <div className="col-span-10">
                       <input
                         type="text"
-                        placeholder="Nome della linea / Boulder"
+                        placeholder={formData.type === 'falesia' ? 'Nome della via' : 'Nome della linea / Boulder'}
                         value={line.name}
                         onChange={(e) => updateLine(line.id, { name: e.target.value })}
                         className="w-full p-2 bg-white border border-stone-200 rounded-lg text-sm"
@@ -475,7 +516,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
                     <div className="col-span-5">
                        <input
                         type="text"
-                        placeholder="Apritore"
+                        placeholder={formData.type === 'falesia' ? 'Chiodatore / Primo Salitore' : 'Apritore'}
                         value={line.opener || ''}
                         onChange={(e) => updateLine(line.id, { opener: e.target.value })}
                         className="w-full p-2 bg-white border border-stone-200 rounded-lg text-[11px] font-bold uppercase tracking-wider italic"
@@ -507,7 +548,9 @@ export const BlockForm: React.FC<BlockFormProps> = ({
             </div>
           ) : (
             <div className="text-center py-4 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
-              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest italic">Nessuna linea aggiunta</p>
+              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest italic">
+                {formData.type === 'falesia' ? 'Nessuna via aggiunta' : 'Nessuna linea aggiunta'}
+              </p>
             </div>
           )}
         </section>

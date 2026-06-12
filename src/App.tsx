@@ -112,6 +112,7 @@ export default function App() {
   const [editingBlock, setEditingBlock] = useState<Block | null>(null);
   const [activeTab, setActiveTab ] = useState<'home' | 'map' | 'calendar' | 'equipment' | 'profile' | 'admin' | 'equipment'>('home');
   const [filter, setFilter] = useState<BlockStatus | 'all' | 'favorite' | 'visited'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'blocco' | 'falesia'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isGuest, setIsGuest] = useState(false);
   const [showReservedArea, setShowReservedArea] = useState(false);
@@ -416,6 +417,13 @@ export default function App() {
 
   const filteredBlocks = useMemo(() => {
     return blocks.filter(b => {
+      const matchesType = (() => {
+        if (typeFilter === 'all') return true;
+        if (typeFilter === 'blocco') return !b.type || b.type === 'blocco';
+        if (typeFilter === 'falesia') return b.type === 'falesia';
+        return true;
+      })();
+
       const matchesFilter = (() => {
         if (filter === 'all') return true;
         if (filter === 'favorite') return b.favorite;
@@ -426,9 +434,9 @@ export default function App() {
       const matchesSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           b.area.toLowerCase().includes(searchQuery.toLowerCase());
 
-      return matchesFilter && matchesSearch;
+      return matchesType && matchesFilter && matchesSearch;
     });
-  }, [blocks, filter, searchQuery]);
+  }, [blocks, typeFilter, filter, searchQuery]);
 
   if (!authReady) {
     return (
@@ -718,20 +726,57 @@ export default function App() {
                 )}
               </div>
 
+              {/* Type Filter Segment Selector */}
+              <div className="flex bg-stone-950/65 p-1 rounded-2xl mb-6 border border-stone-800 gap-1.5 shadow-inner scale-100 select-none">
+                <button
+                  onClick={() => setTypeFilter('all')}
+                  className={cn(
+                    "flex-1 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                    typeFilter === 'all' ? "bg-stone-800 text-white shadow" : "text-stone-450 hover:text-white"
+                  )}
+                >
+                  🏔️ Tutti
+                </button>
+                <button
+                  onClick={() => setTypeFilter('blocco')}
+                  className={cn(
+                    "flex-1 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                    typeFilter === 'blocco' ? "bg-stone-800 text-white shadow" : "text-stone-450 hover:text-white"
+                  )}
+                >
+                  🪨 Blocchi
+                </button>
+                <button
+                  onClick={() => setTypeFilter('falesia')}
+                  className={cn(
+                    "flex-1 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                    typeFilter === 'falesia' ? "bg-emerald-600/90 text-white shadow" : "text-stone-450 hover:text-white"
+                  )}
+                >
+                  🧗 Falesie
+                </button>
+              </div>
+
               {/* Stats Card */}
-              <div className="p-4 bg-stone-800 rounded-3xl border border-stone-700 mb-6 flex items-center justify-around">
+              <div className="p-4 bg-stone-800 rounded-3xl border border-stone-700 mb-6 flex items-center justify-around select-none">
                 <div className="text-center">
-                  <p className="text-xl font-black text-white italic">{blocks.length}</p>
+                  <p className="text-xl font-black text-white italic">
+                    {blocks.filter(b => typeFilter === 'all' ? true : typeFilter === 'blocco' ? (!b.type || b.type === 'blocco') : b.type === 'falesia').length}
+                  </p>
                   <p className="text-[10px] font-bold text-stone-500 uppercase">Totali</p>
                 </div>
                 <div className="w-px h-8 bg-stone-700" />
                 <div className="text-center">
-                   <p className="text-xl font-black text-emerald-500 italic">{blocks.filter(b => b.status === 'clean').length}</p>
+                   <p className="text-xl font-black text-emerald-500 italic">
+                     {blocks.filter(b => (typeFilter === 'all' ? true : typeFilter === 'blocco' ? (!b.type || b.type === 'blocco') : b.type === 'falesia') && b.status === 'clean').length}
+                   </p>
                    <p className="text-[10px] font-bold text-stone-500 uppercase">Puliti</p>
                 </div>
                 <div className="w-px h-8 bg-stone-700" />
                 <div className="text-center">
-                   <p className="text-xl font-black text-amber-500 italic">{blocks.filter(b => b.status === 'to_clean').length}</p>
+                   <p className="text-xl font-black text-amber-500 italic">
+                     {blocks.filter(b => (typeFilter === 'all' ? true : typeFilter === 'blocco' ? (!b.type || b.type === 'blocco') : b.type === 'falesia') && b.status === 'to_clean').length}
+                   </p>
                    <p className="text-[10px] font-bold text-stone-500 uppercase">Da Pulire</p>
                 </div>
               </div>

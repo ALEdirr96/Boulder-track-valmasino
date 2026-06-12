@@ -23,6 +23,7 @@ export interface Block {
   accessNotes?: string;
   landingNotes?: string;
   riskLevel?: string;
+  type?: 'blocco' | 'falesia';
   photos?: string[];
   linePhoto?: string;
   lines?: Line[];
