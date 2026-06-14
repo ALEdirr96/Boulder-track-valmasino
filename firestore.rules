@@ -65,6 +65,11 @@ service cloud.firestore {
              (!('projectOwner' in data) || (data.projectOwner is string && data.projectOwner.size() < 128)) &&
              (!('createdByDisplayName' in data) || (data.createdByDisplayName is string && data.createdByDisplayName.size() < 128)) &&
              (!('createdByEmail' in data) || (data.createdByEmail is string && data.createdByEmail.size() < 128)) &&
+             (!('type' in data) || (data.type is string && data.type in ['blocco', 'falesia'])) &&
+             (!('approachTime' in data) || (data.approachTime is string && data.approachTime.size() < 100)) &&
+             (!('parkingCoords' in data) || (data.parkingCoords is map && data.parkingCoords.lat is number && data.parkingCoords.lng is number)) &&
+             (!('tags' in data) || (data.tags is list && data.tags.size() <= 10)) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp) &&
              data.createdAt is timestamp &&
              data.createdBy is string && data.createdBy.size() < 128 &&
              (!('visited' in data) || data.visited is bool) &&
@@ -123,10 +128,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      // Allow self-registration as pending
+      // Allow self-registration as pending, or superadmin as active/admin
       allow create: if isOwner(userId) && 
-                      request.resource.data.role == 'user' && 
-                      request.resource.data.status == 'pending';
+                      (
+                        (request.resource.data.role == 'user' && request.resource.data.status == 'pending') ||
+                        (isSuperAdmin() && request.resource.data.role == 'admin' && request.resource.data.status == 'active')
+                      );
       // Admins can create users directly
       allow create: if isAdmin();
       

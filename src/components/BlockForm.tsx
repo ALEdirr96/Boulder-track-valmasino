@@ -180,7 +180,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.area || !formData.lat || !formData.lng) {
+    if (!formData.name || !formData.area || formData.lat === undefined || formData.lat === null || formData.lng === undefined || formData.lng === null) {
       alert('Nome, area e posizione sono obbligatori');
       return;
     }
