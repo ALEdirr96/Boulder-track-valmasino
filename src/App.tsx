@@ -116,6 +116,18 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isGuest, setIsGuest] = useState(false);
   const [showReservedArea, setShowReservedArea] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToast(message);
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Auth form state
   const [isLogin, setIsLogin] = useState(true);
@@ -326,35 +338,49 @@ export default function App() {
       return await op();
     } catch (error) {
       console.error(error);
-      const detailedError = handleFirestoreError(error, operationType, path);
+      let detailedError = "";
+      try {
+        handleFirestoreError(error, operationType, path);
+      } catch (err: any) {
+        detailedError = err.message;
+      }
       alert(`${friendlyMsg}\n\nDettagli tecnici: ${detailedError}`);
     }
   };
 
   const handleAddBlock = async (data: Partial<Block>) => {
-    if (!user || !profile) return;
-    await executeFirestore(async () => {
+    if (!user) return;
+    const authorDisplayName = profile?.displayName || user.displayName || user.email?.split('@')[0] || 'Utente';
+    const authorEmail = user.email || '';
+    const success = await executeFirestore(async () => {
       await addDoc(collection(db, 'blocks'), {
         ...data,
         createdAt: serverTimestamp(),
         createdBy: user.uid,
-        createdByEmail: user.email,
-        createdByDisplayName: profile.displayName,
+        createdByEmail: authorEmail,
+        createdByDisplayName: authorDisplayName,
         visited: false,
         favorite: false,
       });
       await logActivity(`Creato il blocco "${data.name}" nel settore "${data.area}"`, 'block', {
         uid: user.uid,
-        email: user.email || '',
-        displayName: profile.displayName || 'Anonimo',
+        email: authorEmail,
+        displayName: authorDisplayName,
       });
       setCurrentView('list');
+      return true;
     }, OperationType.CREATE, 'blocks', "Errore nel salvataggio del blocco. Potresti non avere i permessi necessari.");
+
+    if (success) {
+      showToast(`Blocco "${data.name}" creato con successo!`);
+    }
   };
 
   const handleUpdateBlock = async (data: Partial<Block>) => {
     if (!user || !selectedBlock) return;
-    await executeFirestore(async () => {
+    const authorDisplayName = profile?.displayName || user.displayName || user.email?.split('@')[0] || 'Utente';
+    const authorEmail = user.email || '';
+    const success = await executeFirestore(async () => {
       const blockRef = doc(db, 'blocks', selectedBlock.id);
       await updateDoc(blockRef, {
         ...data,
@@ -362,12 +388,17 @@ export default function App() {
       });
       await logActivity(`Modificato il blocco "${selectedBlock.name}"`, 'block', {
         uid: user.uid,
-        email: user.email || '',
-        displayName: profile?.displayName || 'Anonimo',
+        email: authorEmail,
+        displayName: authorDisplayName,
       });
       setSelectedBlock({ ...selectedBlock, ...data });
       setCurrentView('detail');
+      return true;
     }, OperationType.UPDATE, `blocks/${selectedBlock.id}`, "Errore nell'aggiornamento. Permesso negato.");
+
+    if (success) {
+      showToast(`Blocco "${data.name || selectedBlock.name}" modificato con successo!`);
+    }
   };
 
   const handleDeleteBlock = async (id: string) => {
@@ -1145,44 +1176,67 @@ export default function App() {
   };
 
   return (
-    <Layout
-      activeTab={activeTab}
-      onTabChange={(tab) => {
-        if (isGuest && (tab === 'profile' || tab === 'admin' || tab === 'equipment')) return;
-        
-        setActiveTab(tab);
-        if (tab === 'home') {
-          setCurrentView('list');
-        } else if (tab === 'admin') {
-          setCurrentView('admin');
-        } else {
-          setCurrentView(tab);
-        }
-      }}
-      onAddClick={() => {
-        if (!profile) return;
-        if (activeTab === 'admin') {
-          window.dispatchEvent(new CustomEvent('app-team-add-click'));
-        } else {
-          setEditingBlock(null);
-          setCurrentView('form');
-        }
-      }}
-      isAdmin={profile?.role === 'admin'}
-      isGuest={isGuest}
-    >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentView}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="h-full"
-        >
-          {renderView()}
-        </motion.div>
+    <>
+      <Layout
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          if (isGuest && (tab === 'profile' || tab === 'admin' || tab === 'equipment')) return;
+          
+          setActiveTab(tab);
+          if (tab === 'home') {
+            setCurrentView('list');
+          } else if (tab === 'admin') {
+            setCurrentView('admin');
+          } else {
+            setCurrentView(tab);
+          }
+        }}
+        onAddClick={() => {
+          if (!profile) return;
+          if (activeTab === 'admin') {
+            window.dispatchEvent(new CustomEvent('app-team-add-click'));
+          } else {
+            setEditingBlock(null);
+            setCurrentView('form');
+          }
+        }}
+        isAdmin={profile?.role === 'admin'}
+        isGuest={isGuest}
+      >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentView}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="h-full"
+          >
+            {renderView()}
+          </motion.div>
+        </AnimatePresence>
+      </Layout>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="fixed bottom-6 right-6 z-[60] bg-emerald-600 dark:bg-emerald-500 text-white shadow-xl flex items-center gap-3 px-5 py-3.5 rounded-2xl border border-emerald-500/20 max-w-sm sm:max-w-md"
+          >
+            <CheckCircle className="w-5 h-5 shrink-0" />
+            <span className="text-sm font-medium pr-1">{toast}</span>
+            <button 
+              onClick={() => setToast(null)}
+              className="ml-auto hover:bg-emerald-700/50 p-1 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4 text-white" />
+            </button>
+          </motion.div>
+        )}
       </AnimatePresence>
-    </Layout>
+    </>
   );
 }
