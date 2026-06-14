@@ -18,7 +18,9 @@ import {
   where,
   getDocs,
   setDoc,
-  limit
+  limit,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, 
@@ -29,7 +31,7 @@ import {
   sendPasswordResetEmail
 } from 'firebase/auth';
 import { db, auth, firebaseConfigExport } from './firebase';
-import { Block, BlockStatus, UserProfile } from './types';
+import { Block, BlockStatus, UserProfile, CalendarEvent } from './types';
 import { Layout } from './components/Layout';
 import { BlockCard } from './components/BlockCard';
 import { BlockDetail } from './components/BlockDetail';
@@ -47,7 +49,7 @@ import {
   Loader2, LogIn, Mountain, Filter, 
   CheckCircle, Star, AlertCircle, X,
   ArrowLeft, Search, UserPlus, Shield, Info, ExternalLink, Clock,
-  ChevronDown
+  ChevronDown, Inbox, Bell, Calendar, MapPin, Users, Check
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -117,6 +119,45 @@ export default function App() {
   const [isGuest, setIsGuest] = useState(false);
   const [showReservedArea, setShowReservedArea] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [showInbox, setShowInbox] = useState(false);
+  const [dismissedEventIds, setDismissedEventIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('dismissed_events_v1');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const dismissEvent = (id: string) => {
+    const updated = [...dismissedEventIds, id];
+    setDismissedEventIds(updated);
+    try {
+      localStorage.setItem('dismissed_events_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const upcomingEvents = useMemo(() => {
+    const now = new Date();
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const twoWeeksLaterDate = new Date(todayDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    return events.filter(event => {
+      if (!event.date) return false;
+      const eventParts = event.date.split('-');
+      if (eventParts.length !== 3) return false;
+      const evDate = new Date(parseInt(eventParts[0]), parseInt(eventParts[1]) - 1, parseInt(eventParts[2]));
+      return evDate >= todayDate && evDate <= twoWeeksLaterDate;
+    }).sort((a, b) => a.date.localeCompare(b.date));
+  }, [events]);
+
+  const activeUpcomingEvents = useMemo(() => {
+    return upcomingEvents.filter(ev => !dismissedEventIds.includes(ev.id));
+  }, [upcomingEvents, dismissedEventIds]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -276,6 +317,25 @@ export default function App() {
     return unsubscribe;
   }, [user, profile, isGuest]);
 
+  // Events Listener for Members
+  useEffect(() => {
+    if (isGuest) return;
+    if (!user || !profile || profile.status !== 'active') return;
+
+    const q = query(collection(db, 'events'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const eventsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CalendarEvent[];
+      setEvents(eventsData);
+    }, (error) => {
+      console.error("Error loading events sync in home:", error);
+    });
+
+    return unsubscribe;
+  }, [user, profile, isGuest]);
+
   const handleForgotPassword = async () => {
     if (!email) {
       setAuthError("Inserisci la tua email per reimpostare la password.");
@@ -415,6 +475,44 @@ export default function App() {
       setCurrentView('list');
       setSelectedBlock(null);
     }, OperationType.DELETE, `blocks/${id}`, "Errore nell'eliminazione.");
+  };
+
+  const handleToggleEventParticipation = async (event: CalendarEvent) => {
+    if (!user || !profile) return;
+    const eventRef = doc(db, 'events', event.id);
+    const isParticipating = event.participants?.includes(user.uid);
+
+    await executeFirestore(async () => {
+      if (isParticipating) {
+        await updateDoc(eventRef, {
+          participants: arrayRemove(user.uid)
+        });
+        await logActivity(
+          `Disiscritto da evento: "${event.title}" del ${event.date}`,
+          'user',
+          {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: profile.displayName || 'Anonimo',
+          }
+        );
+        showToast("Ti sei disiscritto dall'evento.");
+      } else {
+        await updateDoc(eventRef, {
+          participants: arrayUnion(user.uid)
+        });
+        await logActivity(
+          `Iscritto a evento: "${event.title}" del ${event.date}`,
+          'user',
+          {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: profile.displayName || 'Anonimo',
+          }
+        );
+        showToast("Ti sei iscritto all'evento!");
+      }
+    }, OperationType.UPDATE, `events/${event.id}`, "Errore durante l'aggiornamento dei partecipanti.");
   };
 
   const handleToggleFavorite = async (block: Block) => {
@@ -728,14 +826,33 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <div 
-                  onClick={() => isGuest ? setIsGuest(false) : setCurrentView('profile')} 
-                  className={cn(
-                    "w-12 h-12 bg-stone-800 rounded-2xl flex items-center justify-center border-2 border-brand cursor-pointer overflow-hidden shadow-lg shadow-brand/10 text-white font-bold text-sm",
-                    isGuest && "bg-red-500/10 border-red-500"
+                <div className="flex items-center gap-2">
+                  {!isGuest && (
+                    <button
+                      onClick={() => setShowInbox(true)}
+                      className="relative w-12 h-12 bg-stone-800 rounded-2xl flex items-center justify-center border border-stone-700 hover:border-brand/40 transition-colors cursor-pointer text-stone-300 hover:text-white"
+                      title="Bacheca Avvisi"
+                    >
+                      <Inbox className="w-5 h-5 text-stone-300" />
+                      {activeUpcomingEvents.length > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 text-[9px] font-bold text-white items-center justify-center">
+                            {activeUpcomingEvents.length}
+                          </span>
+                        </span>
+                      )}
+                    </button>
                   )}
-                >
-                  {isGuest ? <X className="w-6 h-6 text-red-500" /> : profile?.displayName?.slice(0, 2).toUpperCase()}
+                  <div 
+                    onClick={() => isGuest ? setIsGuest(false) : setCurrentView('profile')} 
+                    className={cn(
+                      "w-12 h-12 bg-stone-800 rounded-2xl flex items-center justify-center border-2 border-brand cursor-pointer overflow-hidden shadow-lg shadow-brand/10 text-white font-bold text-sm",
+                      isGuest && "bg-red-500/10 border-red-500"
+                    )}
+                  >
+                    {isGuest ? <X className="w-6 h-6 text-red-500" /> : profile?.displayName?.slice(0, 2).toUpperCase()}
+                  </div>
                 </div>
               </div>
 
@@ -866,7 +983,114 @@ export default function App() {
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-4 pb-44" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)' }}>
+             <div className="flex-1 overflow-y-auto p-4 pb-44" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)' }}>
+              {!isGuest && upcomingEvents.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 px-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black text-[9px] uppercase tracking-widest rounded-full flex items-center gap-1.5 shadow-sm shadow-emerald-500/5">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                        </span>
+                        Attività
+                      </div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-stone-200">Eventi Prossimi (2 sett.)</h3>
+                    </div>
+                    {activeUpcomingEvents.length > 0 && (
+                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                        {activeUpcomingEvents.length} Nuov{activeUpcomingEvents.length === 1 ? 'o' : 'i'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-stone-700 scrollbar-track-transparent snap-x">
+                    {upcomingEvents.map((ev) => {
+                      const isAttendee = ev.participants?.includes(user?.uid || '');
+                      let typeLabel = "Evento";
+                      let typeColor = "stone";
+                      let typeEmoji = "📅";
+                      if (ev.type === 'cleaning_day') {
+                        typeLabel = "Cleaning Day";
+                        typeColor = "emerald";
+                        typeEmoji = "🧹";
+                      } else if (ev.type === 'gathering') {
+                        typeLabel = "Raduno";
+                        typeColor = "amber";
+                        typeEmoji = "🔥";
+                      } else if (ev.type === 'meeting') {
+                        typeLabel = "Assemblea";
+                        typeColor = "blue";
+                        typeEmoji = "🗣️";
+                      }
+
+                      let dateFormattata = ev.date;
+                      try {
+                        const dateParts = ev.date.split('-');
+                        if (dateParts.length === 3) {
+                          const d = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+                          dateFormattata = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+                        }
+                      } catch (e) {
+                         console.error(e);
+                      }
+
+                      return (
+                        <div 
+                          key={ev.id} 
+                          className="snap-start shrink-0 w-[280px] bg-stone-850/90 border border-stone-800 rounded-2xl p-4 flex flex-col justify-between hover:border-stone-750 transition-all shadow-md relative group overflow-hidden"
+                        >
+                          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                          
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-2.5">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1",
+                                typeColor === 'emerald' && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+                                typeColor === 'amber' && "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+                                typeColor === 'blue' && "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+                                typeColor === 'stone' && "bg-stone-500/10 text-stone-400 border border-stone-500/20"
+                              )}>
+                                <span>{typeEmoji}</span> {typeLabel}
+                              </span>
+                              
+                              <span className="text-[10px] text-stone-400 font-black tracking-tighter uppercase flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-stone-500" /> {dateFormattata} @ {ev.time}
+                              </span>
+                            </div>
+
+                            <h4 className="text-sm font-black text-white leading-tight mb-1 uppercase tracking-tight line-clamp-1">{ev.title}</h4>
+                            <p className="text-xs text-stone-400 line-clamp-2 mb-3.5 leading-snug">{ev.description || "Nessuna descrizione specificata."}</p>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between gap-2 border-t border-stone-800/60 pt-3">
+                              <span className="text-[10px] text-stone-450 font-bold truncate flex items-center gap-1 shrink" title={ev.location}>
+                                <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                                {ev.location}
+                              </span>
+
+                              <button
+                                onClick={() => handleToggleEventParticipation(ev)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer select-none",
+                                  isAttendee 
+                                    ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/25" 
+                                    : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-950/20"
+                                )}
+                              >
+                                {isAttendee ? "Lascia" : "Partecipa"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {loading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-stone-700" />
@@ -1235,6 +1459,205 @@ export default function App() {
               <X className="w-4 h-4 text-white" />
             </button>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showInbox && !isGuest && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowInbox(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] cursor-pointer"
+            />
+
+            {/* Slide-over Content Drawer */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed inset-y-0 right-0 w-full max-w-md bg-stone-900 border-l border-stone-800 shadow-2xl z-[101] flex flex-col"
+              style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}
+            >
+              {/* Drawer Header */}
+              <div className="p-5 border-b border-stone-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center">
+                    <Inbox className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black uppercase italic tracking-wider text-white">Bacheca Avvisi</h2>
+                    <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Comunicazioni & Eventi ASD</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowInbox(false)}
+                  className="w-8 h-8 bg-stone-850 rounded-xl flex items-center justify-center border border-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Drawer Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 no-scrollbar">
+                {upcomingEvents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <div className="w-16 h-16 bg-stone-850 rounded-full flex items-center justify-center mb-4 border border-stone-800">
+                      <Bell className="w-8 h-8 text-stone-600" />
+                    </div>
+                    <p className="text-stone-300 font-bold uppercase tracking-widest text-xs">Nessun avviso recente</p>
+                    <p className="text-stone-500 text-[10px] mt-1 max-w-[200px]">Non ci sono eventi in programma per le prossime due settimane.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between bg-stone-950/45 p-3 rounded-xl border border-stone-800 text-[10px] text-stone-400 font-bold uppercase tracking-wider">
+                      <span>Prossime due settimane</span>
+                      <button 
+                        onClick={() => {
+                          upcomingEvents.forEach(ev => dismissEvent(ev.id));
+                          showToast("Tutti gli avvisi segnati come letti.");
+                        }}
+                        className="text-brand hover:underline cursor-pointer"
+                      >
+                        Segna tutti letti
+                      </button>
+                    </div>
+
+                    {upcomingEvents.map((ev) => {
+                      const isUnread = !dismissedEventIds.includes(ev.id);
+                      const isAttendee = ev.participants?.includes(user?.uid || '');
+                      
+                      let typeLabel = "Evento";
+                      let typeColor = "stone";
+                      let typeEmoji = "📅";
+                      if (ev.type === 'cleaning_day') {
+                        typeLabel = "Cleaning Day";
+                        typeColor = "emerald";
+                        typeEmoji = "🧹";
+                      } else if (ev.type === 'gathering') {
+                        typeLabel = "Raduno";
+                        typeColor = "amber";
+                        typeEmoji = "🔥";
+                      } else if (ev.type === 'meeting') {
+                        typeLabel = "Assemblea";
+                        typeColor = "blue";
+                        typeEmoji = "🗣️";
+                      }
+
+                      let dateFormattata = ev.date;
+                      try {
+                        const dateParts = ev.date.split('-');
+                        if (dateParts.length === 3) {
+                          const d = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+                          dateFormattata = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+                        }
+                      } catch (e) {
+                         console.error(e);
+                      }
+
+                      return (
+                        <div 
+                          key={ev.id} 
+                          className={cn(
+                            "relative p-4 rounded-2xl border transition-all flex flex-col gap-3",
+                            isUnread 
+                              ? "bg-stone-850/60 border-stone-750/80 shadow-md shadow-brand/2 animate-pulse-once" 
+                              : "bg-stone-900 border-stone-850 opacity-90"
+                          )}
+                        >
+                          {/* Unread Ring indicator */}
+                          {isUnread && (
+                            <div className="absolute top-4 right-4 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                          )}
+
+                          {/* Event Header with category */}
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1",
+                              typeColor === 'emerald' && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+                              typeColor === 'amber' && "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+                              typeColor === 'blue' && "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+                              typeColor === 'stone' && "bg-stone-500/10 text-stone-400 border border-stone-500/20"
+                            )}>
+                              <span>{typeEmoji}</span> {typeLabel}
+                            </span>
+                          </div>
+
+                          {/* Details */}
+                          <div>
+                            <h3 className="text-sm font-black text-white uppercase tracking-tight leading-tight">{ev.title}</h3>
+                            <p className="text-xs text-stone-400 font-bold uppercase tracking-wider mt-1.5 flex items-center gap-1 text-[10px]">
+                              <Clock className="w-3.5 h-3.5 text-stone-500" /> {dateFormattata} @ {ev.time}
+                            </p>
+                            <p className="text-xs text-stone-400 font-bold uppercase tracking-wider mt-1 flex items-center gap-1 text-[10px] break-all">
+                              <MapPin className="w-3.5 h-3.5 text-stone-500 shrink-0" /> {ev.location}
+                            </p>
+                            
+                            {ev.description && (
+                              <p className="text-xs text-stone-300 mt-2.5 leading-relaxed bg-stone-950/20 p-2 text-[11px] rounded-xl border border-stone-850/30">
+                                {ev.description}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Action Bar */}
+                          <div className="flex items-center justify-between border-t border-stone-850/90 pt-3 mt-1.5 font-bold">
+                            {/* Mark as read button */}
+                            {isUnread ? (
+                              <button 
+                                onClick={() => dismissEvent(ev.id)}
+                                className="text-[10px] font-black uppercase text-stone-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <Check className="w-4 h-4 text-emerald-500" /> Segna Letto
+                              </button>
+                            ) : (
+                              <span className="text-[9px] uppercase text-stone-500 flex items-center gap-1">
+                                Letto
+                              </span>
+                            )}
+
+                            {/* Attendance */}
+                            <button
+                              onClick={() => handleToggleEventParticipation(ev)}
+                              className={cn(
+                                "px-3.5 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                                isAttendee 
+                                  ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/25" 
+                                  : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                              )}
+                            >
+                              {isAttendee ? "Lascia" : "Partecipa"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-5 border-t border-stone-800 bg-stone-950/50 flex flex-col gap-2.5">
+                <button
+                  onClick={() => {
+                    setActiveTab('calendar');
+                    setCurrentView('calendar');
+                    setShowInbox(false);
+                  }}
+                  className="w-full py-3 bg-stone-800 hover:bg-stone-750 text-white font-black text-[10px] uppercase tracking-widest rounded-xl border border-stone-700 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4 text-emerald-400" /> Calendario Completo
+                </button>
+                <p className="text-[8px] font-bold text-stone-500 uppercase tracking-widest text-center">
+                  Bacheca ASD Val Masino Climbing
+                </p>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>
